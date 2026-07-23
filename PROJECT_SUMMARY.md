@@ -1,10 +1,10 @@
 # Snail Sexing AI — Project Summary
 
-## ✅ What's Built
-
 A full-stack React + TypeScript + Vite web app for AI-powered snail sex and pregnancy classification, backed by Firebase Firestore.
 
 ---
+
+## ✅ What's Built
 
 ### The App
 
@@ -20,99 +20,17 @@ A full-stack React + TypeScript + Vite web app for AI-powered snail sex and preg
 ### Backend (Firebase)
 
 - **Firestore** — Collection `snails` stores: photo (as base64), date, gender, pregnancy status, confidence, morphological notes
-- **Storage** — Skipped (would require payment). Photos stored directly in Firestore as base64 data URLs
-- **Firebase Config**: Project `snail-c6aee` is connected and live
+- **Storage** — Skipped (no subscription needed). Photos stored as base64 directly in Firestore
+- **Project**: `snail-c6aee` — connected and live
 
 ### Source Control
 
 - **GitHub**: https://github.com/asdadsadsadas/Snail_Sex_Identifier
+- **Branch**: `master`
 
 ---
 
-## 🧠 How to Train Your Real YOLO Model
-
-### 1. Collect snail photos
-
-Best practices:
-- **Top-down (90°) angle** — most important rule
-- Plain white/light grey background
-- Bright, diffused natural light (avoid direct flash)
-- Snail resting, slightly exposed — not fully retracted or fully crawling
-- Shell fills ~60-70% of the frame
-- At least 800x800 resolution
-
-**Goal: 200+ photos per class** (100 minimum)
-
-### 2. Label & organize
-
-Simplest approach — just use folders:
-```
-dataset_sex/
-├── train/
-│   ├── male/
-│   └── female/
-└── val/
-    ├── male/
-    └── female/
-
-dataset_pregnancy/
-├── train/
-│   ├── pregnant/
-│   └── not_pregnant/
-└── val/
-    ├── pregnant/
-    └── not_pregnant/
-```
-
-**Recommended tools:**
-- **Label Studio** (free, local) — `pip install label-studio`
-- **Roboflow** (free for 1000 images) — web-based
-
-### 3. Train the model
-
-```bash
-pip install ultralytics
-
-# Train sex classifier
-yolo classify train model=yolo11n-cls.pt data=./dataset_sex epochs=50 imgsz=224
-
-# Train pregnancy classifier
-yolo classify train model=yolo11n-cls.pt data=./dataset_pregnancy epochs=50 imgsz=224
-```
-
-### 4. Deploy as an API
-
-Create a FastAPI server that loads your trained models and exposes a /classify endpoint. Host for free on Railway or Render.
-
-### 5. Connect the app
-
-Set the environment variable:
-```
-VITE_YOLO_API_URL=https://your-api.railway.app/classify
-```
-
-The app will automatically switch from mock to real predictions.
-
----
-
-## 📁 Files Overview
-
-| File | Purpose |
-|---|---|
-| `src/App.tsx` | Main app with screen routing and Firestore data loading |
-| `src/screens/OnboardingScreen.tsx` | 3-slide onboarding flow |
-| `src/screens/ScanScreen.tsx` | Camera, gallery, classification, result overlay, save |
-| `src/screens/HomeScreen.tsx` | Live Firestore counts, recent logs |
-| `src/screens/HistoryScreen.tsx` | Search + filter, Firestore-powered list |
-| `src/screens/DetailScreen.tsx` | Edit/delete with confirmation |
-| `src/screens/StatsScreen.tsx` | Real pie/bar charts from Firestore |
-| `src/lib/firebase.ts` | Firebase config + all CRUD operations |
-| `src/lib/api.ts` | YOLO API service with mock fallback |
-| `src/types.ts` | TypeScript type definitions |
-
----
-
-## 🚀 How to Run
+## 🚀 How to Run Locally
 
 ```bash
 npm install
@@ -133,10 +51,78 @@ localStorage.removeItem('snail_sexing_onboarding_done')
 
 ---
 
-## 🗺️ Remaining Roadmap
+## 🌐 Railway Deployment (in progress)
 
-- [ ] Collect snail photos (100-200 per class)
-- [ ] Organize into train/val folders
-- [ ] Train two YOLO models (sex + pregnancy)
-- [ ] Deploy FastAPI server to Railway/Render
-- [ ] Point app to real API endpoint
+The project has been prepared for Railway deployment:
+
+- **Build command**: `npm run build`
+- **Start command**: `serve dist -l 3000`
+- **Dependency**: `serve` package installed
+
+### To finish deploying:
+
+1. In Railway dashboard → **Settings** tab, verify:
+   - **Build Command**: `npm run build`
+   - **Start Command**: `npx serve dist -l 3000`
+2. Check **Deployments** tab for any build errors
+3. Once green ✅, share the generated URL with anyone
+
+---
+
+## 🧠 Roadmap: Making the Real AI Model
+
+### 1. Collect snail photos 📸
+
+Best practices:
+- **Top-down (90°) angle** — most important
+- Plain white/light grey background
+- Bright, diffused natural light
+- Snail resting, slightly exposed
+- Shell fills ~60-70% of the frame
+- **Goal: 200+ photos per class**
+
+### 2. Label & organize 🏷️
+
+```
+dataset_sex/train/male/
+dataset_sex/train/female/
+dataset_pregnancy/train/pregnant/
+dataset_pregnancy/train/not_pregnant/
+```
+Plus `val/` folders with ~20% of images.
+
+### 3. Train YOLO model 🎯
+
+```bash
+pip install ultralytics
+yolo classify train model=yolo11n-cls.pt data=./dataset_sex epochs=50 imgsz=224
+yolo classify train model=yolo11n-cls.pt data=./dataset_pregnancy epochs=50 imgsz=224
+```
+
+### 4. Deploy as API 🌐
+
+Create a FastAPI server loading your trained models, deploy to Railway or Render.
+
+### 5. Connect the app 🔗
+
+Set `VITE_YOLO_API_URL=https://your-api.railway.app/classify`
+
+The app will automatically switch from mock to real predictions.
+
+---
+
+## 📁 Project Structure
+
+| File | Purpose |
+|---|---|
+| `src/App.tsx` | Main app with screen routing and Firestore data loading |
+| `src/screens/OnboardingScreen.tsx` | 3-slide onboarding flow |
+| `src/screens/ScanScreen.tsx` | Camera, gallery, classification, result overlay, save |
+| `src/screens/HomeScreen.tsx` | Live Firestore counts, recent logs |
+| `src/screens/HistoryScreen.tsx` | Search + filter, Firestore-powered list |
+| `src/screens/DetailScreen.tsx` | Edit/delete with confirmation |
+| `src/screens/StatsScreen.tsx` | Real pie/bar charts from Firestore |
+| `src/lib/firebase.ts` | Firebase config + all CRUD operations |
+| `src/lib/api.ts` | YOLO API service with mock fallback |
+| `src/types.ts` | TypeScript type definitions |
+| `PROJECT_SUMMARY.md` | This file — full project overview |
