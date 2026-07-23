@@ -23,6 +23,10 @@ A full-stack React + TypeScript + Vite web app for AI-powered snail sex and preg
 - **Storage** — Skipped (would require payment). Photos stored directly in Firestore as base64 data URLs
 - **Firebase Config**: Project `snail-c6aee` is connected and live
 
+### Source Control
+
+- **GitHub**: https://github.com/asdadsadsadas/Snail_Sex_Identifier
+
 ---
 
 ## 🧠 How to Train Your Real YOLO Model
@@ -129,9 +133,10 @@ localStorage.removeItem('snail_sexing_onboarding_done')
 
 ---
 
-## 📝 Latest Updates
+## 🗺️ Remaining Roadmap
 
-- Firebase Firestore connected (project: `snail-c6aee`)
-- Photos stored as base64 in Firestore (no paid Storage needed)
-- Mock YOLO classifier in place (swap for real API later)
-- Onboarding screen with camera permission request
+- [ ] Collect snail photos (100-200 per class)
+- [ ] Organize into train/val folders
+- [ ] Train two YOLO models (sex + pregnancy)
+- [ ] Deploy FastAPI server to Railway/Render
+- [ ] Point app to real API endpoint
