@@ -1,162 +1,197 @@
-import { ArrowLeft, User, Database, Camera, ChevronRight, RefreshCw } from "lucide-react";
-import { ScreenName, SnailRecord } from "../types";
+import { useEffect, useState } from "react";
+import { motion } from "motion/react";
+import {
+  Shell,
+  Venus,
+  Mars,
+  Baby,
+  ArrowRight,
+  Sparkles,
+} from "lucide-react";
+import { getSnailCounts, getRecentSnailLogs, type SnailLog } from "../lib/firebase";
+import { formatDate, formatConfidence } from "../lib/utils";
+import { cn } from "../lib/utils";
 
 interface HomeScreenProps {
-  onNavigate: (screen: ScreenName) => void;
-  onViewDetail: (id: string) => void;
-  counts: { total: number; male: number; female: number; pregnant: number };
-  recentRecords: SnailRecord[];
-  loading: boolean;
+  onNavigate: (screen: string, params?: any) => void;
 }
 
-export function HomeScreen({ onNavigate, onViewDetail, counts, recentRecords, loading }: HomeScreenProps) {
-  const { total, male, female, pregnant } = counts;
+export function HomeScreen({ onNavigate }: HomeScreenProps) {
+  const [counts, setCounts] = useState({ total: 0, male: 0, female: 0, pregnant: 0 });
+  const [recent, setRecent] = useState<SnailLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [c, r] = await Promise.all([
+          getSnailCounts(),
+          getRecentSnailLogs(3),
+        ]);
+        setCounts(c);
+        setRecent(r);
+      } catch (err) {
+        console.error("Failed to load home data", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  const statCards = [
+    {
+      label: "Total",
+      value: counts.total,
+      icon: Shell,
+      color: "bg-[#c0fffc]",
+      textColor: "text-[#03615f]",
+    },
+    {
+      label: "Male",
+      value: counts.male,
+      icon: Mars,
+      color: "bg-[#beead1]",
+      textColor: "text-[#3f6653]",
+    },
+    {
+      label: "Female",
+      value: counts.female,
+      icon: Venus,
+      color: "bg-[#ffdad6]",
+      textColor: "text-[#ba1a1a]",
+    },
+    {
+      label: "Pregnant",
+      value: counts.pregnant,
+      icon: Baby,
+      color: "bg-[#c1ecd4]",
+      textColor: "text-[#274e3d]",
+    },
+  ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="w-8 h-8 border-2 border-[#03615f] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full h-full overflow-y-auto bg-gray-50 pb-24">
-      <header className="sticky top-0 bg-gray-50 z-40 flex items-center justify-between px-4 h-16 w-full">
-        <button className="text-[#03615f] hover:opacity-80 active:scale-95 transition-all p-2 rounded-full">
-          <ArrowLeft size={24} />
-        </button>
-        <h1 className="text-xl font-semibold text-[#03615f] tracking-tight">Snail Sexing AI</h1>
-        <button className="text-[#03615f] hover:opacity-80 active:scale-95 transition-all p-2 rounded-full">
-          <User size={24} />
-        </button>
-      </header>
+    <div className="flex flex-col h-full bg-[#f8f9fa] overflow-y-auto pb-32">
+      {/* Header */}
+      <div className="px-6 pt-6 pb-4">
+        <motion.div
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Shell size={24} className="text-[#03615f]" />
+            <h1 className="text-2xl font-bold text-gray-900">
+              Snail Dashboard
+            </h1>
+          </div>
+          <p className="text-gray-500 text-sm">
+            Live classification overview
+          </p>
+        </motion.div>
+      </div>
 
-      <main className="px-4 pt-4 space-y-6">
-        {/* Greeting */}
-        <section>
-          <h2 className="text-xl font-semibold text-gray-900">Good morning, Researcher</h2>
-          <p className="text-sm text-gray-500 mt-1">Here is your logging overview.</p>
-        </section>
-
-        {/* Total Snails Logged */}
-        <section>
-          <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wider">
-                Total Snails Logged
-              </p>
-              {loading ? (
-                <div className="h-10 w-16 bg-gray-200 animate-pulse rounded-lg mt-1" />
-              ) : (
-                <p className="text-4xl font-bold text-gray-900">{total}</p>
+      {/* Stats grid */}
+      <div className="px-6 grid grid-cols-2 gap-3 mb-6">
+        {statCards.map((stat, i) => {
+          const Icon = stat.icon;
+          return (
+            <motion.div
+              key={stat.label}
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: i * 0.1, duration: 0.4 }}
+              className={cn(
+                "rounded-2xl p-4 flex items-center gap-3",
+                stat.color
               )}
-            </div>
-            <div className="w-12 h-12 rounded-full bg-[#2d7a78] flex items-center justify-center text-white shadow-inner">
-              <Database size={24} />
-            </div>
-          </div>
-        </section>
-
-        {/* Male vs Female & Pregnant Count */}
-        <section className="grid grid-cols-2 gap-4">
-          <div className="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm text-center flex flex-col justify-center">
-            <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Male vs Female</p>
-            {loading ? (
-              <div className="h-8 w-20 bg-gray-200 animate-pulse rounded mx-auto" />
-            ) : (
-              <div className="flex justify-center items-end space-x-1">
-                <span className="text-2xl font-semibold text-[#03615f]">{male}</span>
-                <span className="text-sm text-gray-300 mb-1">/</span>
-                <span className="text-2xl font-semibold text-[#3f6653]">{female}</span>
-              </div>
-            )}
-          </div>
-          <div className="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm text-center flex flex-col justify-center">
-            <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Pregnant Count</p>
-            {loading ? (
-              <div className="h-8 w-12 bg-gray-200 animate-pulse rounded mx-auto" />
-            ) : (
-              <span className="text-2xl font-semibold text-gray-900">{pregnant}</span>
-            )}
-          </div>
-        </section>
-
-        {/* Scan New Snail Button */}
-        <section className="flex justify-center py-2">
-          <button
-            onClick={() => onNavigate("Scan")}
-            className="bg-[#2d7a78] text-white text-lg font-semibold py-4 px-8 rounded-full shadow-lg hover:opacity-90 active:scale-95 transition-all duration-200 flex items-center space-x-3 w-full justify-center"
-          >
-            <Camera size={24} className="fill-white" />
-            <span>Scan New Snail</span>
-          </button>
-        </section>
-
-        {/* Recent Logs */}
-        <section>
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Recent Logs</h3>
-            <button
-              onClick={() => onNavigate("History")}
-              className="text-sm font-medium text-[#03615f] hover:opacity-80 transition-opacity flex items-center gap-1"
             >
-              View All
-              <ChevronRight size={16} />
-            </button>
-          </div>
+              <Icon size={32} className={stat.textColor} />
+              <div>
+                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                <p className={cn("text-sm font-medium", stat.textColor)}>
+                  {stat.label}
+                </p>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
 
-          {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="bg-white rounded-3xl p-3 border border-gray-100 shadow-sm flex items-center space-x-4 animate-pulse">
-                  <div className="w-16 h-16 rounded-2xl bg-gray-200 shrink-0" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 bg-gray-200 rounded w-3/4" />
-                    <div className="h-3 bg-gray-200 rounded w-1/2" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : recentRecords.length === 0 ? (
-            <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm text-center">
-              <Camera size={40} className="mx-auto text-gray-300 mb-3" />
-              <p className="text-gray-500 text-sm">No snails logged yet.</p>
-              <p className="text-gray-400 text-xs mt-1">Tap "Scan New Snail" to get started!</p>
+      {/* Recent logs */}
+      <div className="px-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-bold text-gray-900">Recent Logs</h2>
+          <button
+            onClick={() => onNavigate("history")}
+            className="text-sm font-medium text-[#03615f] flex items-center gap-1 hover:opacity-80 transition-opacity"
+          >
+            View All
+            <ArrowRight size={16} />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {recent.length === 0 ? (
+            <div className="text-center py-8">
+              <Sparkles size={32} className="text-gray-300 mx-auto mb-2" />
+              <p className="text-gray-400 text-sm">No records yet. Start scanning!</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {recentRecords.map((record) => (
-                <button
-                  key={record.id}
-                  onClick={() => onViewDetail(record.id)}
-                  className="w-full bg-white rounded-3xl p-3 border border-gray-100 shadow-sm flex items-center space-x-4 text-left hover:bg-gray-50 active:scale-[0.98] transition-all"
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center">
-                    {record.imageUrl ? (
-                      <img src={record.imageUrl} alt="Snail scan" className="w-full h-full object-cover" />
-                    ) : (
-                      <Camera className="text-gray-400" />
-                    )}
-                  </div>
-                  <div className="flex-grow min-w-0">
-                    <p className="text-sm font-medium text-gray-900 mb-1 truncate">{record.date}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <span className="inline-flex items-center px-2 py-1 rounded-md bg-[#c0fffc] text-[#00504e] text-xs font-medium">
-                        {record.gender}
-                      </span>
-                      {record.pregnantStatus === "Pregnant" ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-md bg-[#2d7a78] text-white text-xs font-semibold">
-                          Pregnant
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-1 rounded-md bg-gray-100 text-gray-600 text-xs font-medium">
-                          Not Pregnant
-                        </span>
+            recent.map((log, i) => (
+              <motion.div
+                key={log.id}
+                initial={{ x: -20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ delay: i * 0.1, duration: 0.3 }}
+                onClick={() => onNavigate("detail", { id: log.id })}
+                className="bg-white rounded-2xl p-4 border border-gray-100 flex items-center gap-4 active:scale-[0.98] transition-all cursor-pointer"
+              >
+                <div className="w-12 h-12 rounded-xl bg-[#c0fffc] flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  {log.photoUrl ? (
+                    <img
+                      src={log.photoUrl}
+                      alt="Snail"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Shell size={24} className="text-[#03615f]" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-semibold text-gray-900 text-sm">
+                      {log.gender}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[10px] font-medium px-2 py-0.5 rounded-full",
+                        log.gender === "Male"
+                          ? "bg-[#beead1] text-[#3f6653]"
+                          : "bg-[#ffdad6] text-[#ba1a1a]"
                       )}
-                    </div>
+                    >
+                      {log.pregnantStatus}
+                    </span>
                   </div>
-                  <div className="p-2 text-gray-400">
-                    <ChevronRight size={20} />
-                  </div>
-                </button>
-              ))}
-            </div>
+                  <p className="text-xs text-gray-400 truncate">
+                    {formatDate(log.date)} · {formatConfidence(log.confidence)} confidence
+                  </p>
+                </div>
+                <ArrowRight size={18} className="text-gray-300 flex-shrink-0" />
+              </motion.div>
+            ))
           )}
-        </section>
-      </main>
+        </div>
+      </div>
     </div>
   );
 }

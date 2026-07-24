@@ -1,55 +1,54 @@
-import { Home, Camera, History, BarChart2 } from "lucide-react";
+import { Home, Camera, History, BarChart3, Shell } from "lucide-react";
 import { cn } from "../lib/utils";
-import { ScreenName } from "../types";
+
+export type NavTab = "home" | "scan" | "history" | "stats";
+export type ScreenName = NavTab | "detail";
 
 interface BottomNavProps {
-  currentScreen: ScreenName;
+  active: "home" | "scan" | "history" | "stats";
   onNavigate: (screen: ScreenName) => void;
 }
 
-export function BottomNav({ currentScreen, onNavigate }: BottomNavProps) {
-  const isNavVisible = ["Home", "Scan", "History", "Stats"].includes(currentScreen);
+const tabs = [
+  { key: "home" as const, label: "Home", icon: Home },
+  { key: "scan" as const, label: "Scan", icon: Camera },
+  { key: "history" as const, label: "History", icon: History },
+  { key: "stats" as const, label: "Stats", icon: BarChart3 },
+];
 
-  if (!isNavVisible) return null;
-
-  const navItems = [
-    { name: "Home" as ScreenName, icon: Home, label: "Home" },
-    { name: "Scan" as ScreenName, icon: Camera, label: "Scan" },
-    { name: "History" as ScreenName, icon: History, label: "History" },
-    { name: "Stats" as ScreenName, icon: BarChart2, label: "Stats" },
-  ];
-
+export function BottomNav({ active, onNavigate }: BottomNavProps) {
   return (
-    <nav className="fixed bottom-0 left-0 w-full flex justify-around items-center px-4 py-2 bg-white border-t border-gray-200 shadow-[0px_-4px_12px_rgba(0,0,0,0.05)] rounded-t-xl z-50 md:max-w-md md:left-1/2 md:-translate-x-1/2 pb-safe">
-      {navItems.map((item) => {
-        const isActive = currentScreen === item.name;
-        return (
-          <button
-            key={item.name}
-            onClick={() => onNavigate(item.name)}
-            className="flex flex-col items-center justify-center p-2 rounded-lg transition-colors active:scale-90 duration-200 w-16"
-          >
-            <item.icon
+    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 pb-6 pt-2">
+      <div className="flex items-center justify-around max-w-md mx-auto">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = active === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => onNavigate(tab.key)}
               className={cn(
-                "mb-1 w-6 h-6",
-                isActive ? "text-[#03615f] fill-[#03615f]" : "text-gray-500"
-              )}
-              strokeWidth={isActive ? 2 : 1.5}
-            />
-            <span
-              className={cn(
-                "text-[10px]",
-                isActive ? "text-[#03615f] font-semibold" : "text-gray-500 font-medium"
+                "flex flex-col items-center gap-1 py-1 px-4 rounded-xl transition-all duration-200",
+                isActive
+                  ? "text-[#03615f]"
+                  : "text-gray-400 hover:text-gray-600"
               )}
             >
-              {item.label}
-            </span>
-            {isActive && (
-              <div className="w-1 h-1 bg-[#03615f] rounded-full mt-1 absolute bottom-1" />
-            )}
-          </button>
-        );
-      })}
+              <div
+                className={cn(
+                  "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200",
+                  isActive && "bg-[#c0fffc]"
+                )}
+              >
+                <Icon size={22} />
+              </div>
+              <span className="text-[10px] font-medium tracking-wider uppercase">
+                {tab.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </nav>
   );
 }

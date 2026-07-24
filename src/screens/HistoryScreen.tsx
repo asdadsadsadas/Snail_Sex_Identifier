@@ -1,239 +1,205 @@
-import { useState, useMemo } from "react";
-import { ArrowLeft, User, Search, Filter, ChevronRight, Camera, X, SlidersHorizontal } from "lucide-react";
-import { SnailRecord, ScreenName, SnailGender, PregnantStatus } from "../types";
-import { cn } from "../lib/utils";
+import { useEffect, useState, useMemo } from "react";
+import { motion } from "motion/react";
+import {
+  History,
+  Search,
+  Filter,
+  ArrowRight,
+  Shell,
+  X,
+  Calendar,
+} from "lucide-react";
+import { getAllSnailLogs, type SnailLog } from "../lib/firebase";
+import { formatDate, formatConfidence, cn } from "../lib/utils";
 
 interface HistoryScreenProps {
-  records: SnailRecord[];
-  loading: boolean;
-  onViewDetail: (id: string) => void;
+  onNavigate: (screen: string, params?: any) => void;
 }
 
-export function HistoryScreen({ records, loading, onViewDetail }: HistoryScreenProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
-  const [filterGender, setFilterGender] = useState<SnailGender | "All">("All");
-  const [filterStatus, setFilterStatus] = useState<PregnantStatus | "All">("All");
+export function HistoryScreen({ onNavigate }: HistoryScreenProps) {
+  const [logs, setLogs] = useState<SnailLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [filterGender, setFilterGender] = useState<string>("");
+  const [filterPregnancy, setFilterPregnancy] = useState<string>("");
 
-  // Filter records by search query, gender, and pregnancy status
-  const filteredRecords = useMemo(() => {
-    return records.filter((r) => {
-      // Date search
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        if (!r.date.toLowerCase().includes(q)) return false;
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await getAllSnailLogs();
+        setLogs(data);
+      } catch (err) {
+        console.error("Failed to load history", err);
+      } finally {
+        setLoading(false);
       }
-      // Gender filter
-      if (filterGender !== "All" && r.gender !== filterGender) return false;
-      // Status filter
-      if (filterStatus !== "All" && r.pregnantStatus !== filterStatus) return false;
-      return true;
+    }
+    load();
+  }, []);
+
+  const filtered = useMemo(() => {
+    return logs.filter((log) => {
+      const matchSearch =
+        !search ||
+        log.date.toLowerCase().includes(search.toLowerCase()) ||
+        log.morphologicalNotes.toLowerCase().includes(search.toLowerCase());
+      const matchGender = !filterGender || log.gender === filterGender;
+      const matchPregnancy =
+        !filterPregnancy || log.pregnantStatus === filterPregnancy;
+      return matchSearch && matchGender && matchPregnancy;
     });
-  }, [records, searchQuery, filterGender, filterStatus]);
+  }, [logs, search, filterGender, filterPregnancy]);
 
   const clearFilters = () => {
-    setFilterGender("All");
-    setFilterStatus("All");
-    setSearchQuery("");
+    setSearch("");
+    setFilterGender("");
+    setFilterPregnancy("");
   };
 
-  const hasActiveFilters = filterGender !== "All" || filterStatus !== "All" || searchQuery.trim().length > 0;
+  const hasFilters = search || filterGender || filterPregnancy;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="w-8 h-8 border-2 border-[#03615f] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full h-full overflow-y-auto bg-[#f8f9fa] pb-24">
-      <header className="sticky top-0 bg-[#f8f9fa] z-40 flex items-center justify-between px-4 h-16 w-full">
-        <button className="text-gray-500 hover:opacity-80 active:scale-95 transition-all w-10 h-10 flex items-center justify-center">
-          <ArrowLeft size={24} />
-        </button>
-        <h1 className="text-xl font-semibold text-[#03615f] tracking-tight">Snail History</h1>
-        <button className="text-gray-500 hover:opacity-80 active:scale-95 transition-all w-10 h-10 flex items-center justify-center">
-          <User size={24} />
-        </button>
-      </header>
+    <div className="flex flex-col h-full bg-[#f8f9fa] overflow-y-auto pb-32">
+      {/* Header */}
+      <div className="px-6 pt-6 pb-4">
+        <div className="flex items-center gap-2 mb-1">
+          <History size={24} className="text-[#03615f]" />
+          <h1 className="text-2xl font-bold text-gray-900">History</h1>
+        </div>
+        <p className="text-gray-500 text-sm">
+          {logs.length} record{logs.length !== 1 ? "s" : ""} in total
+        </p>
+      </div>
 
-      <main className="px-4 pt-4 flex flex-col gap-4">
-        {/* Search & Filter Bar */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-            <input
-              type="text"
-              placeholder="Search by date..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-11 pl-10 pr-10 bg-white rounded-lg border border-gray-200 focus:border-[#2d7a78] focus:ring-1 focus:ring-[#2d7a78] text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-all shadow-sm"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                <X size={16} />
-              </button>
-            )}
-          </div>
+      {/* Search bar */}
+      <div className="px-6 mb-3">
+        <div className="relative">
+          <Search
+            size={18}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+          />
+          <input
+            type="text"
+            placeholder="Search by date or notes..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-3 bg-white rounded-xl border border-gray-200 text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#2d7a78] focus:ring-1 focus:ring-[#2d7a78] transition-all"
+          />
+        </div>
+      </div>
+
+      {/* Filter chips */}
+      <div className="px-6 mb-4 flex items-center gap-2 flex-wrap">
+        <Filter size={16} className="text-gray-400" />
+        {["Male", "Female"].map((g) => (
           <button
-            onClick={() => setShowFilters(!showFilters)}
+            key={g}
+            onClick={() => setFilterGender(filterGender === g ? "" : g)}
             className={cn(
-              "w-11 h-11 rounded-lg border flex items-center justify-center transition-colors flex-shrink-0 active:scale-95 shadow-sm",
-              showFilters || filterGender !== "All" || filterStatus !== "All"
-                ? "bg-[#2d7a78] text-white border-[#2d7a78]"
-                : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"
+              "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+              filterGender === g
+                ? "bg-[#03615f] text-white"
+                : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
             )}
           >
-            <SlidersHorizontal size={20} />
+            {g}
           </button>
-        </div>
-
-        {/* Filter Panel */}
-        {(showFilters || hasActiveFilters) && (
-          <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-gray-900">Filters</span>
-              {hasActiveFilters && (
-                <button
-                  onClick={clearFilters}
-                  className="text-xs font-medium text-[#03615f] hover:underline"
-                >
-                  Clear all
-                </button>
-              )}
-            </div>
-
-            {/* Gender Filter */}
-            <div>
-              <p className="text-xs font-medium text-gray-500 mb-2">Sex</p>
-              <div className="flex gap-2">
-                {(["All", "Male", "Female"] as const).map((g) => (
-                  <button
-                    key={g}
-                    onClick={() => setFilterGender(g)}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
-                      filterGender === g
-                        ? "bg-[#03615f] text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    )}
-                  >
-                    {g === "All" ? "All" : g}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Pregnancy Status Filter */}
-            <div>
-              <p className="text-xs font-medium text-gray-500 mb-2">Pregnancy</p>
-              <div className="flex gap-2">
-                {(["All", "Pregnant", "Not Pregnant"] as const).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setFilterStatus(s)}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
-                      filterStatus === s
-                        ? "bg-[#03615f] text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    )}
-                  >
-                    {s === "All" ? "All" : s === "Pregnant" ? "Pregnant" : "Non-Pregnant"}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+        ))}
+        {["Pregnant", "Not Pregnant"].map((p) => (
+          <button
+            key={p}
+            onClick={() =>
+              setFilterPregnancy(filterPregnancy === p ? "" : p)
+            }
+            className={cn(
+              "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+              filterPregnancy === p
+                ? "bg-[#527766] text-white"
+                : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+            )}
+          >
+            {p}
+          </button>
+        ))}
+        {hasFilters && (
+          <button
+            onClick={clearFilters}
+            className="px-3 py-1.5 rounded-full text-xs font-medium text-gray-400 hover:text-gray-600 flex items-center gap-1 transition-all"
+          >
+            <X size={14} />
+            Clear
+          </button>
         )}
+      </div>
 
-        {/* Records List */}
-        <div className="flex flex-col gap-3 pb-4">
-          {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div
-                  key={i}
-                  className="w-full bg-white rounded-3xl p-4 border border-gray-100 shadow-sm flex items-center gap-4 animate-pulse"
-                >
-                  <div className="w-12 h-12 rounded-full bg-gray-200 flex-shrink-0" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-3 bg-gray-200 rounded w-1/2" />
-                    <div className="h-3 bg-gray-200 rounded w-1/3" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : filteredRecords.length === 0 ? (
-            <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm text-center">
-              <Camera size={40} className="mx-auto text-gray-300 mb-3" />
-              <p className="text-gray-500 text-sm font-medium">No records found</p>
-              <p className="text-gray-400 text-xs mt-1">
-                {hasActiveFilters
-                  ? "Try adjusting your search or filters."
-                  : "Start by scanning your first snail!"}
-              </p>
-              {hasActiveFilters && (
-                <button
-                  onClick={clearFilters}
-                  className="mt-4 text-sm font-medium text-[#03615f] hover:underline"
-                >
-                  Clear filters
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              <p className="text-xs text-gray-400 font-medium px-1">
-                {filteredRecords.length} record{filteredRecords.length !== 1 ? "s" : ""}
-              </p>
-              {filteredRecords.map((record) => (
-                <button
-                  key={record.id}
-                  onClick={() => onViewDetail(record.id)}
-                  className="w-full bg-white rounded-3xl p-4 border border-gray-100 shadow-sm flex items-center gap-4 text-left hover:bg-gray-50 transition-colors active:scale-[0.98]"
-                >
-                  <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-100 flex-shrink-0 flex items-center justify-center">
-                    {record.imageUrl ? (
-                      <img src={record.imageUrl} alt="Snail shell" className="w-full h-full object-cover" />
-                    ) : (
-                      <Camera className="text-gray-400" size={20} />
+      {/* List */}
+      <div className="px-6 space-y-3">
+        {filtered.length === 0 ? (
+          <div className="text-center py-12">
+            <Shell size={40} className="text-gray-200 mx-auto mb-3" />
+            <p className="text-gray-400 text-sm font-medium">
+              {logs.length === 0
+                ? "No records yet. Start scanning!"
+                : "No records match your filters."}
+            </p>
+          </div>
+        ) : (
+          filtered.map((log, i) => (
+            <motion.div
+              key={log.id}
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: i * 0.03, duration: 0.3 }}
+              onClick={() => onNavigate("detail", { id: log.id })}
+              className="bg-white rounded-2xl p-4 border border-gray-100 flex items-center gap-4 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <div className="w-14 h-14 rounded-xl bg-[#c0fffc] flex items-center justify-center flex-shrink-0 overflow-hidden">
+                {log.photoUrl ? (
+                  <img
+                    src={log.photoUrl}
+                    alt="Snail"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <Shell size={28} className="text-[#03615f]" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-semibold text-gray-900 text-sm">
+                    {log.gender}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-[10px] font-medium px-2 py-0.5 rounded-full",
+                      log.gender === "Male"
+                        ? "bg-[#beead1] text-[#3f6653]"
+                        : "bg-[#ffdad6] text-[#ba1a1a]"
                     )}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-gray-500 mb-1 truncate">{record.date}</div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {record.gender === "Female" ? (
-                        <span className="px-2 py-1 rounded bg-[#527766] text-white text-xs font-medium whitespace-nowrap">
-                          Female
-                        </span>
-                      ) : (
-                        <span className="px-2 py-1 rounded bg-gray-200 text-gray-700 text-xs font-medium whitespace-nowrap">
-                          Male
-                        </span>
-                      )}
-
-                      {record.pregnantStatus === "Pregnant" ? (
-                        <span className="px-2 py-1 rounded bg-[#beead1] text-[#274e3d] text-xs font-medium whitespace-nowrap">
-                          Pregnant
-                        </span>
-                      ) : (
-                        <span className="px-2 py-1 rounded bg-gray-200 text-gray-700 text-xs font-medium whitespace-nowrap">
-                          Non-Pregnant
-                        </span>
-                      )}
-
-                      <span className="text-xs text-gray-400 ml-auto">
-                        {record.confidence}%
-                      </span>
-                    </div>
-                  </div>
-
-                  <ChevronRight className="text-gray-400 flex-shrink-0" size={24} />
-                </button>
-              ))}
-            </>
-          )}
-        </div>
-      </main>
+                  >
+                    {log.pregnantStatus}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-400">
+                  <Calendar size={12} />
+                  <span>{formatDate(log.date)}</span>
+                  <span>·</span>
+                  <span>{formatConfidence(log.confidence)}</span>
+                </div>
+              </div>
+              <ArrowRight size={18} className="text-gray-300 flex-shrink-0" />
+            </motion.div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

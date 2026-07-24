@@ -11,7 +11,7 @@ A full-stack React + TypeScript + Vite web app for AI-powered snail sex and preg
 | Feature | Details |
 |---|---|
 | **Onboarding** | 3-slide intro with camera permission request, stored in localStorage |
-| **Scan** | Live camera via getUserMedia, gallery upload, mock YOLO classification with loading spinner, result overlay with sex/pregnancy/confidence/morphological notes |
+| **Scan** | Live camera via getUserMedia, gallery upload, mock YOLO classification with loading spinner, result overlay with sex/pregnancy/confidence/morphological notes, save to Firestore |
 | **Home** | Live counts (total, male/female, pregnant) from Firestore, top 3 recent logs |
 | **History** | All records from Firestore with search by date, filter by sex & pregnancy status |
 | **Detail** | View full record, edit sex/pregnancy with save, delete with confirmation dialog |
@@ -51,20 +51,18 @@ localStorage.removeItem('snail_sexing_onboarding_done')
 
 ---
 
-## 🌐 Railway Deployment (in progress)
+## 🌐 Railway Deployment
 
-The project has been prepared for Railway deployment:
+The project is configured for Railway deployment:
 
 - **Build command**: `npm run build`
-- **Start command**: `serve dist -l 3000`
-- **Dependency**: `serve` package installed
+- **Start command**: `npx serve dist -l $PORT`
+- **Config file**: `railway.json`
 
-### To finish deploying:
+### To deploy:
 
-1. In Railway dashboard → **Settings** tab, verify:
-   - **Build Command**: `npm run build`
-   - **Start Command**: `npx serve dist -l 3000`
-2. Check **Deployments** tab for any build errors
+1. Connect your GitHub repo to Railway
+2. Railway will auto-detect `railway.json` and use the correct build/start commands
 3. Once green ✅, share the generated URL with anyone
 
 ---
@@ -89,6 +87,7 @@ dataset_sex/train/female/
 dataset_pregnancy/train/pregnant/
 dataset_pregnancy/train/not_pregnant/
 ```
+
 Plus `val/` folders with ~20% of images.
 
 ### 3. Train YOLO model 🎯
@@ -115,14 +114,37 @@ The app will automatically switch from mock to real predictions.
 
 | File | Purpose |
 |---|---|
+| `package.json` | Project config, scripts, dependencies |
+| `tsconfig.json` | TypeScript configuration |
+| `vite.config.ts` | Vite build config with React + Tailwind |
+| `index.html` | App entry HTML |
+| `railway.json` | Railway deployment config |
 | `src/App.tsx` | Main app with screen routing and Firestore data loading |
+| `src/main.tsx` | React root mount point |
+| `src/index.css` | Tailwind CSS v4 import |
+| `src/types.ts` | TypeScript type definitions |
 | `src/screens/OnboardingScreen.tsx` | 3-slide onboarding flow |
 | `src/screens/ScanScreen.tsx` | Camera, gallery, classification, result overlay, save |
 | `src/screens/HomeScreen.tsx` | Live Firestore counts, recent logs |
 | `src/screens/HistoryScreen.tsx` | Search + filter, Firestore-powered list |
-| `src/screens/DetailScreen.tsx` | Edit/delete with confirmation |
-| `src/screens/StatsScreen.tsx` | Real pie/bar charts from Firestore |
+| `src/screens/DetailScreen.tsx` | View, edit, delete records with confirmation |
+| `src/screens/StatsScreen.tsx` | Pie/bar charts from Firestore via Recharts |
+| `src/components/BottomNav.tsx` | Bottom tab navigation (Home, Scan, History, Stats) |
 | `src/lib/firebase.ts` | Firebase config + all CRUD operations |
 | `src/lib/api.ts` | YOLO API service with mock fallback |
-| `src/types.ts` | TypeScript type definitions |
+| `src/lib/utils.ts` | Utility functions (cn, formatDate, formatConfidence) |
+| `src/vite-env.d.ts` | Vite type declarations |
 | `PROJECT_SUMMARY.md` | This file — full project overview |
+
+---
+
+## 🛠 Tech Stack
+
+- **Framework**: React 19 + TypeScript
+- **Bundler**: Vite 6
+- **Styling**: Tailwind CSS v4
+- **Icons**: Lucide React
+- **Animations**: Motion
+- **Charts**: Recharts
+- **Backend**: Firebase Firestore
+- **Deployment**: Railway (via `railway.json`)

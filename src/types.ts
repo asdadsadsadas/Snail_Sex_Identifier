@@ -3,24 +3,35 @@ export type PregnantStatus = "Pregnant" | "Not Pregnant";
 
 export interface SnailRecord {
   id: string;
+  photoUrl: string;
   date: string;
   gender: SnailGender;
   pregnantStatus: PregnantStatus;
   confidence: number;
-  imageUrl?: string;
-  shellLength?: number;
-  shellWidth?: number;
-  operculum?: string;
-  tentacles?: string;
-  morphologicalNotes?: string;
+  shellLength: number | null;
+  shellWidth: number | null;
+  operculum: string | null;
+  tentacles: string | null;
+  morphologicalNotes: string;
+  createdAt: any;
 }
 
-export type ScreenName = "Home" | "Scan" | "History" | "Stats" | "Detail";
-
-/** Minimal snapshot returned by the mock (or real) YOLO API. */
-export interface YoloResult {
-  sex: SnailGender;
-  pregnancyStatus: PregnantStatus;
+export interface SnailRecordInput {
+  photoUrl: string;
+  date: string;
+  gender: SnailGender;
+  pregnantStatus: PregnantStatus;
   confidence: number;
+  shellLength: number | null;
+  shellWidth: number | null;
+  operculum: string | null;
+  tentacles: string | null;
   morphologicalNotes: string;
+}
+
+export interface SnailCounts {
+  total: number;
+  male: number;
+  female: number;
+  pregnant: number;
 }
