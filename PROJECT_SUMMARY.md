@@ -11,7 +11,7 @@ A full-stack React + TypeScript + Vite web app for AI-powered snail sex and preg
 | Feature | Details |
 |---|---|
 | **Onboarding** | 3-slide intro with camera permission request, stored in localStorage |
-| **Scan** | Live camera via getUserMedia, gallery upload, mock YOLO classification with loading spinner, result overlay with sex/pregnancy/confidence/morphological notes, save to Firestore |
+| **Scan** | Live camera via getUserMedia, gallery upload, AI classification with loading spinner, result overlay with sex/pregnancy/confidence/morphological notes, save to Firestore |
 | **Home** | Live counts (total, male/female, pregnant) from Firestore, top 3 recent logs |
 | **History** | All records from Firestore with search by date, filter by sex & pregnancy status |
 | **Detail** | View full record, edit sex/pregnancy with save, delete with confirmation dialog |
@@ -23,6 +23,22 @@ A full-stack React + TypeScript + Vite web app for AI-powered snail sex and preg
 - **Storage** — Skipped (no subscription needed). Photos stored as base64 directly in Firestore
 - **Project**: `snail-c6aee` — connected and live
 
+### Backend (Express + Gemini)
+
+- **`src/server.ts`** — Express server with **Gemini 2.0 Flash Vision** for real-time snail classification
+- **`POST /classify`** — Accepts image upload, sends to Gemini, returns structured sex/pregnancy/confidence/morphological notes
+- **Fallback** — App falls back to mock classification if server is unreachable
+- **Dev**: `npm run dev:server` (port 3001) | **Production**: served via Railway with frontend
+
+### AI Training Pipeline
+
+| Resource | Details |
+|---|---|
+| **`AI_TRAINING_GUIDE.md`** | Full end-to-end guide: Label Studio → YOLO in Colab → FastAPI → connect to app |
+| **`dataset_sex/`** | Blank folder structure for sex classification dataset (male/female, train/val) |
+| **`dataset_pregnancy/`** | Blank folder structure for pregnancy dataset (pregnant/not_pregnant, train/val) |
+| **`snail-api-server/`** | Placeholder for your FastAPI YOLO server |
+
 ### Source Control
 
 - **GitHub**: https://github.com/asdadsadsadas/Snail_Sex_Identifier
@@ -33,8 +49,15 @@ A full-stack React + TypeScript + Vite web app for AI-powered snail sex and preg
 ## 🚀 How to Run Locally
 
 ```bash
-npm install
-npm run dev          # → http://localhost:3000
+# Frontend (port 3000)
+npm run dev
+
+# Backend server with Gemini AI (port 3001)
+npm run dev:server
+
+# Both at once (separate terminals)
+npm run dev           # Terminal 1
+npm run dev:server    # Terminal 2
 ```
 
 On your phone (same Wi-Fi):
@@ -42,9 +65,15 @@ On your phone (same Wi-Fi):
 http://192.168.1.12:3000
 ```
 
+### Setup Gemini (optional — mock works without it)
+
+1. Get a free API key: https://aistudio.google.com/apikey
+2. Copy `.env.example` to `.env` and add your key
+3. Start the server: `npm run dev:server`
+4. The app will use real AI classification instead of mock
+
 ### Reset onboarding (see it again)
 
-In browser DevTools console:
 ```js
 localStorage.removeItem('snail_sexing_onboarding_done')
 ```
@@ -53,60 +82,52 @@ localStorage.removeItem('snail_sexing_onboarding_done')
 
 ## 🌐 Railway Deployment
 
-The project is configured for Railway deployment:
+The project deploys as a unified server (frontend + API):
 
-- **Build command**: `npm run build`
-- **Start command**: `npx serve dist -l $PORT`
-- **Config file**: `railway.json`
+- **Build**: `npm run build` (builds React frontend)
+- **Start**: `NODE_ENV=production npx tsx src/server.ts` (serves frontend + API)
+- **Config**: `railway.json`
 
 ### To deploy:
 
-1. Connect your GitHub repo to Railway
-2. Railway will auto-detect `railway.json` and use the correct build/start commands
-3. Once green ✅, share the generated URL with anyone
+1. Push to GitHub
+2. Connect repo to Railway
+3. Add `GEMINI_API_KEY` environment variable in Railway dashboard (optional)
+4. Railway auto-deploys ✅
 
 ---
 
-## 🧠 Roadmap: Making the Real AI Model
+## 🧠 Training Your Own YOLO Model
 
-### 1. Collect snail photos 📸
+For full step-by-step instructions, see **`AI_TRAINING_GUIDE.md`**.
 
-Best practices:
-- **Top-down (90°) angle** — most important
-- Plain white/light grey background
-- Bright, diffused natural light
-- Snail resting, slightly exposed
-- Shell fills ~60-70% of the frame
-- **Goal: 200+ photos per class**
+### Quick overview:
 
-### 2. Label & organize 🏷️
+| Step | What to do |
+|---|---|
+| **1. 📸 Collect** | Take snail photos using the app (top-down, white background, good light) |
+| **2. 🏷️ Label** | Use Label Studio to classify male/female and pregnant/not pregnant |
+| **3. 🎯 Train** | Train YOLO11n-cls in Google Colab (free GPU) — two models: sex + pregnancy |
+| **4. 🌐 Deploy** | Create a FastAPI server, deploy to Railway |
+| **5. 🔗 Connect** | Set `VITE_YOLO_API_URL=https://your-api.up.railway.app` |
+
+### Dataset structure (ready to use):
 
 ```
-dataset_sex/train/male/
-dataset_sex/train/female/
-dataset_pregnancy/train/pregnant/
-dataset_pregnancy/train/not_pregnant/
+dataset_sex/
+├── train/male/        ← add male photos here
+├── train/female/      ← add female photos here
+├── val/male/
+└── val/female/
+
+dataset_pregnancy/
+├── train/pregnant/
+├── train/not_pregnant/
+├── val/pregnant/
+└── val/not_pregnant/
+
+snail-api-server/       ← FastAPI server files go here
 ```
-
-Plus `val/` folders with ~20% of images.
-
-### 3. Train YOLO model 🎯
-
-```bash
-pip install ultralytics
-yolo classify train model=yolo11n-cls.pt data=./dataset_sex epochs=50 imgsz=224
-yolo classify train model=yolo11n-cls.pt data=./dataset_pregnancy epochs=50 imgsz=224
-```
-
-### 4. Deploy as API 🌐
-
-Create a FastAPI server loading your trained models, deploy to Railway or Render.
-
-### 5. Connect the app 🔗
-
-Set `VITE_YOLO_API_URL=https://your-api.railway.app/classify`
-
-The app will automatically switch from mock to real predictions.
 
 ---
 
@@ -119,6 +140,11 @@ The app will automatically switch from mock to real predictions.
 | `vite.config.ts` | Vite build config with React + Tailwind |
 | `index.html` | App entry HTML |
 | `railway.json` | Railway deployment config |
+| `.env.example` | Environment variable template (Gemini API key) |
+| `.gitignore` | Git ignore rules |
+| `AI_TRAINING_GUIDE.md` | Full guide: train YOLO model from scratch |
+| `PROJECT_SUMMARY.md` | This file — full project overview |
+| `src/server.ts` | Express backend server with Gemini Vision API |
 | `src/App.tsx` | Main app with screen routing and Firestore data loading |
 | `src/main.tsx` | React root mount point |
 | `src/index.css` | Tailwind CSS v4 import |
@@ -131,20 +157,25 @@ The app will automatically switch from mock to real predictions.
 | `src/screens/StatsScreen.tsx` | Pie/bar charts from Firestore via Recharts |
 | `src/components/BottomNav.tsx` | Bottom tab navigation (Home, Scan, History, Stats) |
 | `src/lib/firebase.ts` | Firebase config + all CRUD operations |
-| `src/lib/api.ts` | YOLO API service with mock fallback |
+| `src/lib/api.ts` | Classification API service (server → Gemini → mock fallback) |
 | `src/lib/utils.ts` | Utility functions (cn, formatDate, formatConfidence) |
 | `src/vite-env.d.ts` | Vite type declarations |
-| `PROJECT_SUMMARY.md` | This file — full project overview |
+| `dataset_sex/` | Blank dataset folders for YOLO sex training |
+| `dataset_pregnancy/` | Blank dataset folders for YOLO pregnancy training |
+| `snail-api-server/` | Placeholder for custom YOLO FastAPI server |
 
 ---
 
 ## 🛠 Tech Stack
 
-- **Framework**: React 19 + TypeScript
-- **Bundler**: Vite 6
-- **Styling**: Tailwind CSS v4
-- **Icons**: Lucide React
-- **Animations**: Motion
-- **Charts**: Recharts
-- **Backend**: Firebase Firestore
-- **Deployment**: Railway (via `railway.json`)
+| Layer | Tech |
+|---|---|
+| **Frontend** | React 19 + TypeScript + Vite 6 |
+| **Styling** | Tailwind CSS v4 |
+| **Icons** | Lucide React |
+| **Animations** | Motion |
+| **Charts** | Recharts |
+| **Database** | Firebase Firestore |
+| **AI (option 1)** | Gemini 2.0 Flash Vision via Express server |
+| **AI (option 2)** | Custom YOLO model via FastAPI (train your own!) |
+| **Deployment** | Railway (unified server: frontend + API) |
