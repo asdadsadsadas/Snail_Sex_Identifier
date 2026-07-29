@@ -17,8 +17,10 @@ import {
   updateDoc,
   deleteDoc,
   query,
+  where,
   orderBy,
   limit,
+  getCountFromServer,
   type Timestamp,
   type Firestore,
   serverTimestamp,
@@ -166,13 +168,31 @@ export interface SnailCounts {
   pregnant: number;
 }
 
-/** Get aggregate counts from the snails collection. */
+/**
+ * Get aggregate counts from the snails collection using server-side aggregation.
+ * No documents are fetched — only count results are returned.
+ * This is dramatically faster than fetching all docs and counting client-side.
+ */
 export async function getSnailCounts(): Promise<SnailCounts> {
-  const all = await getAllSnailLogs();
+  const db = getDb();
+  const collRef = collection(db, SNAILS_COLLECTION);
+
+  const [
+    totalSnap,
+    maleSnap,
+    femaleSnap,
+    pregnantSnap,
+  ] = await Promise.all([
+    getCountFromServer(query(collRef)),
+    getCountFromServer(query(collRef, where("gender", "==", "Male"))),
+    getCountFromServer(query(collRef, where("gender", "==", "Female"))),
+    getCountFromServer(query(collRef, where("pregnantStatus", "==", "Pregnant"))),
+  ]);
+
   return {
-    total: all.length,
-    male: all.filter((r) => r.gender === "Male").length,
-    female: all.filter((r) => r.gender === "Female").length,
-    pregnant: all.filter((r) => r.pregnantStatus === "Pregnant").length,
+    total: totalSnap.data().count,
+    male: maleSnap.data().count,
+    female: femaleSnap.data().count,
+    pregnant: pregnantSnap.data().count,
   };
 }

@@ -1,20 +1,33 @@
 /**
- * YOLO Snail Classification API Service
+ * Snail Classification API Service
  *
- * This module provides the interface to the external YOLO classification model.
- * When the real API endpoint is ready, update the `API_URL` and the
- * `classifySnailImage` function will send the photo to your model.
+ * Provides the interface to the backend classification API (which uses Gemini Vision).
+ * Falls back to mock classification when the server is unreachable or
+ * VITE_USE_MOCK_YOLO is set to "true".
  *
- * Until then, `mockClassifySnailImage` simulates the response so the rest of
- * the app is fully clickable and testable.
+ * ── Setup ─────────────────────────────────────────────────────────
+ * The backend server runs on http://localhost:3001 by default.
+ * Start it with:  npm run dev:server
+ *
+ * Or set VITE_YOLO_API_URL to a custom endpoint, e.g. for your
+ * deployed Railway backend.
  */
 
 import type { SnailGender, PregnantStatus } from "../types";
 
 // ── Configuration ────────────────────────────────────────────────
-// Swap this URL for your real YOLO model endpoint when it's ready.
-const API_URL =
-  import.meta.env.VITE_YOLO_API_URL || "https://your-yolo-api.example.com/classify";
+// Points to the local Express server by default.
+// In production, set VITE_YOLO_API_URL to your deployed server URL.
+// e.g. VITE_YOLO_API_URL=https://your-app.railway.app
+// Supports both full URLs (with /classify) and base URLs.
+const API_URL = (() => {
+  const env = import.meta.env.VITE_YOLO_API_URL;
+  if (env) {
+    // If it already ends with /classify, use as-is (backward compat)
+    return env.endsWith("/classify") ? env : `${env.replace(/\/+$/, "")}/classify`;
+  }
+  return "http://localhost:3001/classify";
+})();
 
 // ── Response Shape ───────────────────────────────────────────────
 
@@ -25,44 +38,49 @@ export interface ClassificationResult {
   morphologicalNotes: string;
 }
 
-// ── Mock Implementation ──────────────────────────────────────────
+// ── Public API ───────────────────────────────────────────────────
 
 /**
- * Run YOLO classification against a snail photo.
+ * Classify a snail photo using the backend API (Gemini Vision).
  *
- * Sends the image blob to the configured API endpoint via FormData.
- * Falls back to the mock classifier when the endpoint isn't reachable
- * or VITE_USE_MOCK_YOLO is set to "true".
+ * Sends the image blob to the backend server via FormData.
+ * Automatically falls back to mock if:
+ * - VITE_USE_MOCK_YOLO === "true"
+ * - The backend server is unreachable
  */
 export async function classifySnailImage(imageBlob: Blob): Promise<ClassificationResult> {
-  const useMock =
-    import.meta.env.VITE_USE_MOCK_YOLO === "true" ||
-    API_URL.includes("your-yolo-api");
+  const forceMock = import.meta.env.VITE_USE_MOCK_YOLO === "true";
 
-  if (useMock) {
-    return mockClassifySnailImage();
+  if (!forceMock) {
+    try {
+      const formData = new FormData();
+      formData.append("image", imageBlob, "snail.jpg");
+
+      const response = await fetch(API_URL, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          sex: data.sex as SnailGender,
+          pregnancyStatus: data.pregnancyStatus as PregnantStatus,
+          confidence: data.confidence,
+          morphologicalNotes: data.morphologicalNotes ?? "",
+        };
+      }
+
+      console.warn(`API returned ${response.status}, falling back to mock`);
+    } catch (err) {
+      console.warn(
+        "Backend server unreachable (is it running?). Falling back to mock classification.",
+        err
+      );
+    }
   }
 
-  // ── Real API call (ready when your endpoint is live) ──────
-  const formData = new FormData();
-  formData.append("image", imageBlob, "snail.jpg");
-
-  const response = await fetch(API_URL, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    throw new Error(`YOLO API error: ${response.status} ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return {
-    sex: data.sex as SnailGender,
-    pregnancyStatus: data.pregnancyStatus as PregnantStatus,
-    confidence: data.confidence,
-    morphologicalNotes: data.morphologicalNotes ?? "",
-  };
+  return mockClassifySnailImage();
 }
 
 // ── Mock (used while real model is being deployed) ───────────────
@@ -89,8 +107,8 @@ function pickRandom<T>(arr: T[]): T {
 
 /** Simulated delay and response to mimic a real model inference call. */
 async function mockClassifySnailImage(): Promise<ClassificationResult> {
-  // Simulate network latency (1.5 – 3 seconds)
-  const delay = 1500 + Math.random() * 1500;
+  // Simulate network latency (0.5 – 1.2 seconds)
+  const delay = 500 + Math.random() * 700;
   await new Promise((resolve) => setTimeout(resolve, delay));
 
   const sex = pickRandom(mockGenders);

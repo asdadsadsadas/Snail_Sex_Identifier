@@ -27,8 +27,29 @@ A full-stack React + TypeScript + Vite web app for AI-powered snail sex and preg
 
 - **`src/server.ts`** — Express server with **Gemini 2.0 Flash Vision** for real-time snail classification
 - **`POST /classify`** — Accepts image upload, sends to Gemini, returns structured sex/pregnancy/confidence/morphological notes
+- **Structured Output** — Uses Gemini's `responseSchema` for guaranteed JSON shape
 - **Fallback** — App falls back to mock classification if server is unreachable
 - **Dev**: `npm run dev:server` (port 3001) | **Production**: served via Railway with frontend
+
+### Showcase
+
+| Resource | Details |
+|---|---|
+| **`showcase.png`** | Full-page screenshot of all 8 app screens as phone mockups (1.6MB, 2x retina) |
+| **`showcase/index.html`** | Standalone HTML showcase page — open in browser to see all screens in a responsive grid |
+
+Screens showcased: Onboarding · Home Dashboard · Scan (Live Camera, Welcome, Result) · History · Detail View · Statistics
+
+### Key Improvements
+
+| Change | Benefit |
+|---|---|
+| **`compressImage()` utility** | Reduces photo size before Firestore storage (default 480px, 0.6 quality) — saves space & bandwidth |
+| **Server-side Firestore aggregation** | Count queries use `getCountFromServer()` — no document fetching, dramatically faster stats |
+| **ScanScreen redesign** | Dark UI with viewfinder overlay, torch toggle, camera denied fallback, smooth results panel |
+| **Basic SSL plugin** | Self-signed HTTPS for `getUserMedia` on mobile devices (required by mobile browsers) |
+| **Smart API URL resolution** | Automatically appends `/classify` to base URLs — supports both full and partial env config |
+| **Showcase page** | All screens documented in a single HTML showcase + screenshot for README/gallery |
 
 ### AI Training Pipeline
 
@@ -160,6 +181,8 @@ snail-api-server/       ← FastAPI server files go here
 | `src/lib/api.ts` | Classification API service (server → Gemini → mock fallback) |
 | `src/lib/utils.ts` | Utility functions (cn, formatDate, formatConfidence) |
 | `src/vite-env.d.ts` | Vite type declarations |
+| `showcase.png` | Full-page showcase screenshot with all app screens |
+| `showcase/index.html` | Standalone HTML showcase page (responsive grid, phone mockups) |
 | `dataset_sex/` | Blank dataset folders for YOLO sex training |
 | `dataset_pregnancy/` | Blank dataset folders for YOLO pregnancy training |
 | `snail-api-server/` | Placeholder for custom YOLO FastAPI server |
@@ -173,9 +196,10 @@ snail-api-server/       ← FastAPI server files go here
 | **Frontend** | React 19 + TypeScript + Vite 6 |
 | **Styling** | Tailwind CSS v4 |
 | **Icons** | Lucide React |
-| **Animations** | Motion |
+| **Animations** | Motion (former Framer Motion) |
 | **Charts** | Recharts |
 | **Database** | Firebase Firestore |
 | **AI (option 1)** | Gemini 2.0 Flash Vision via Express server |
 | **AI (option 2)** | Custom YOLO model via FastAPI (train your own!) |
 | **Deployment** | Railway (unified server: frontend + API) |
+| **SSL** | @vitejs/plugin-basic-ssl for HTTPS on mobile |

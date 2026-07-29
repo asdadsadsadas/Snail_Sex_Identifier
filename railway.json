@@ -5,8 +5,8 @@
     "buildCommand": "npm run build"
   },
   "deploy": {
-    "startCommand": "npx serve dist -l $PORT",
-    "healthcheckPath": "/",
+    "startCommand": "NODE_ENV=production npx tsx src/server.ts",
+    "healthcheckPath": "/health",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }
