@@ -109,7 +109,7 @@ localStorage.removeItem('snail_sexing_onboarding_done')
 
 The app is deployed as a unified server (frontend + API) on Render:
 
-- **URL**: `https://snail-sexing-ai.onrender.com`
+- **URL**: `https://snail-sex-identifier.onrender.com`
 - **Build**: `npm run build` (builds React frontend)
 - **Start**: `NODE_ENV=production npx tsx src/server.ts` (serves frontend + API)
 - **Config**: `railway.json` (legacy — Render configured via dashboard)
