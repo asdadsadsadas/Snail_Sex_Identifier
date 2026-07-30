@@ -29,7 +29,7 @@ A full-stack React + TypeScript + Vite web app for AI-powered snail sex and preg
 - **`POST /classify`** — Accepts image upload, sends to Gemini, returns structured sex/pregnancy/confidence/morphological notes
 - **Structured Output** — Uses Gemini's `responseSchema` for guaranteed JSON shape
 - **Fallback** — App falls back to mock classification if server is unreachable
-- **Dev**: `npm run dev:server` (port 3001) | **Production**: served via Railway with frontend
+- **Dev**: `npm run dev:server` (port 3001) | **Production**: served via Render with frontend
 
 ### Showcase
 
@@ -50,6 +50,9 @@ Screens showcased: Onboarding · Home Dashboard · Scan (Live Camera, Welcome, R
 | **Basic SSL plugin** | Self-signed HTTPS for `getUserMedia` on mobile devices (required by mobile browsers) |
 | **Smart API URL resolution** | Automatically appends `/classify` to base URLs — supports both full and partial env config |
 | **Showcase page** | All screens documented in a single HTML showcase + screenshot for README/gallery |
+| **PullToRefresh component** | Gesture-based pull-to-refresh on Home and History screens — swipe down to reload data |
+| **Removed unused playwright dependency** | Eliminated Railway build failure caused by playwright's native browser binaries |
+| **Deployed on Render** | Successfully deployed full-stack app (frontend + API) on Render's free tier
 
 ### AI Training Pipeline
 
@@ -59,6 +62,7 @@ Screens showcased: Onboarding · Home Dashboard · Scan (Live Camera, Welcome, R
 | **`dataset_sex/`** | Blank folder structure for sex classification dataset (male/female, train/val) |
 | **`dataset_pregnancy/`** | Blank folder structure for pregnancy dataset (pregnant/not_pregnant, train/val) |
 | **`snail-api-server/`** | Placeholder for your FastAPI YOLO server |
+| **`src/components/PullToRefresh.tsx`** | Touch gesture component for pull-to-refresh data reloading |
 
 ### Source Control
 
@@ -101,20 +105,20 @@ localStorage.removeItem('snail_sexing_onboarding_done')
 
 ---
 
-## 🌐 Railway Deployment
+## 🌐 Render Deployment (Live ✅)
 
-The project deploys as a unified server (frontend + API):
+The app is deployed as a unified server (frontend + API) on Render:
 
+- **URL**: `https://snail-sexing-ai.onrender.com`
 - **Build**: `npm run build` (builds React frontend)
 - **Start**: `NODE_ENV=production npx tsx src/server.ts` (serves frontend + API)
-- **Config**: `railway.json`
+- **Config**: `railway.json` (legacy — Render configured via dashboard)
 
-### To deploy:
+### To redeploy:
 
-1. Push to GitHub
-2. Connect repo to Railway
-3. Add `GEMINI_API_KEY` environment variable in Railway dashboard (optional)
-4. Railway auto-deploys ✅
+1. Push to GitHub → Render auto-deploys from `master` branch
+2. Add `GEMINI_API_KEY` in Render dashboard → Environment tab (optional)
+3. Render auto-builds and deploys ✅
 
 ---
 
@@ -126,7 +130,7 @@ For full step-by-step instructions, see **`AI_TRAINING_GUIDE.md`**.
 
 | Step | What to do |
 |---|---|
-| **1. 📸 Collect** | Take snail photos using the app (top-down, white background, good light) |
+| **1. 📸 Collect** | Take snail photos with your phone's camera app (top-down, white background, good light) — full resolution is better for training |
 | **2. 🏷️ Label** | Use Label Studio to classify male/female and pregnant/not pregnant |
 | **3. 🎯 Train** | Train YOLO11n-cls in Google Colab (free GPU) — two models: sex + pregnancy |
 | **4. 🌐 Deploy** | Create a FastAPI server, deploy to Railway |
@@ -201,5 +205,5 @@ snail-api-server/       ← FastAPI server files go here
 | **Database** | Firebase Firestore |
 | **AI (option 1)** | Gemini 2.0 Flash Vision via Express server |
 | **AI (option 2)** | Custom YOLO model via FastAPI (train your own!) |
-| **Deployment** | Railway (unified server: frontend + API) |
+| **Deployment** | Render (unified server: frontend + API, free tier) |
 | **SSL** | @vitejs/plugin-basic-ssl for HTTPS on mobile |
