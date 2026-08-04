@@ -59,6 +59,7 @@ Screens showcased: Onboarding · Home Dashboard · Scan (Live Camera, Welcome, R
 | Resource | Details |
 |---|---|
 | **`AI_TRAINING_GUIDE.md`** | Full end-to-end guide: Label Studio → YOLO in Colab → FastAPI → connect to app |
+| **`PHOTO_SESSION_GUIDE.md`** | Photo-taking plan for building the dataset: photos per snail (35–40), angles, lighting, sex verification via tentacles, snail-based train/val split, small-dataset Colab settings |
 | **`dataset_sex/`** | Blank folder structure for sex classification dataset (male/female, train/val) |
 | **`dataset_pregnancy/`** | Blank folder structure for pregnancy dataset (pregnant/not_pregnant, train/val) |
 | **`snail-api-server/`** | Placeholder for your FastAPI YOLO server |
@@ -168,6 +169,7 @@ snail-api-server/       ← FastAPI server files go here
 | `.env.example` | Environment variable template (Gemini API key) |
 | `.gitignore` | Git ignore rules |
 | `AI_TRAINING_GUIDE.md` | Full guide: train YOLO model from scratch |
+| `PHOTO_SESSION_GUIDE.md` | Photo session plan: per-snail photo counts, angles, lighting, sexing verification, dataset split |
 | `PROJECT_SUMMARY.md` | This file — full project overview |
 | `src/server.ts` | Express backend server with Gemini Vision API |
 | `src/App.tsx` | Main app with screen routing and Firestore data loading |
