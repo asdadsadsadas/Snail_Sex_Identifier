@@ -4,3 +4,8 @@ dist/
 !.env.example
 *.log
 coverage/
+
+# Dataset artifacts (regenerable or too large for git)
+*.zip
+dataset_sex/drive-download-*/
+scripts/box_previews/

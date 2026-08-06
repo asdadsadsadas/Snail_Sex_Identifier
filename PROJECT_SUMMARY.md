@@ -54,16 +54,22 @@ Screens showcased: Onboarding · Home Dashboard · Scan (Live Camera, Welcome, R
 | **Removed unused playwright dependency** | Eliminated Railway build failure caused by playwright's native browser binaries |
 | **Deployed on Render** | Successfully deployed full-stack app (frontend + API) on Render's free tier
 
-### AI Training Pipeline
+### AI Training Pipeline (3-Stage: Detect → Sex → Pregnancy)
 
 | Resource | Details |
 |---|---|
-| **`AI_TRAINING_GUIDE.md`** | Full end-to-end guide: Label Studio → YOLO in Colab → FastAPI → connect to app |
+| **`AI_TRAINING_GUIDE.md`** | Full end-to-end guide: Label Studio → YOLO in Colab → FastAPI → connect to app. Updated for the **3-stage pipeline**: a snail **detector** first, then sex + pregnancy classifiers on the detected crop |
 | **`PHOTO_SESSION_GUIDE.md`** | Photo-taking plan for building the dataset: photos per snail (35–40), angles, lighting, sex verification via tentacles, snail-based train/val split, small-dataset Colab settings |
-| **`dataset_sex/`** | Blank folder structure for sex classification dataset (male/female, train/val) |
-| **`dataset_pregnancy/`** | Blank folder structure for pregnancy dataset (pregnant/not_pregnant, train/val) |
-| **`snail-api-server/`** | Placeholder for your FastAPI YOLO server |
+| **`scripts/organize_pregnancy_dataset.mjs`** | Maps Label Studio box labels → photos, 80/20 split, builds `dataset_detection/` (YOLO detection + `data.yaml`) and populates `dataset_pregnancy/train|val/pregnant/` |
+| **`scripts/exif_fix_dataset.py`** | Bakes EXIF orientation into phone photos (Label Studio shows them rotated; YOLO/OpenCV ignores the tag → labels were misaligned) + optional 1280px resize; `--check` draws box previews |
+| **`scripts/build_colab_notebook.py`** | Regenerates `colab/train_snail_pipeline.ipynb` from the `.py` source |
+| **`colab/train_snail_pipeline.py` + `.ipynb`** | Ready-to-run Colab: trains detector → sex classifier → pregnancy classifier, exports `.pt` + `.onnx` to Drive, diagnostic cell (mAP, detection rate, annotated preview) |
+| **`dataset_detection/`** | 🟡 **76 labeled pregnant-snail images (61 train / 15 val)**, class `snail` — EXIF-fixed, resized to 1280px. **Round-1 detector trained but not reliable — needs more photos** |
+| **`dataset_pregnancy/`** | 🟡 76 pregnant images organized (train/val/pregnant); `not_pregnant` still empty — needs collecting |
+| **`dataset_sex/`** | ⬜ Empty — needs male/female photo collection (see PHOTO_SESSION_GUIDE) |
 | **`src/components/PullToRefresh.tsx`** | Touch gesture component for pull-to-refresh data reloading |
+
+> 📊 **Training status (round 1):** the 3-stage pipeline (detect → sex → pregnancy) is built and the tooling is ready. A first detector was trained on the 76 labeled images after fixing a critical **EXIF-orientation bug** (62/77 photos were stored rotated; Label Studio showed them correctly but YOLO read raw pixels, so labels were misaligned). The re-trained detector **still couldn't reliably find snails** — 76 images is too few for detection to generalize. **Next: take more photos** (more snails, angles, backgrounds), re-label, re-run the organize + EXIF-fix scripts, and re-train. Sex and `not_pregnant` data still to collect.
 
 ### Source Control
 
@@ -189,8 +195,14 @@ snail-api-server/       ← FastAPI server files go here
 | `src/vite-env.d.ts` | Vite type declarations |
 | `showcase.png` | Full-page showcase screenshot with all app screens |
 | `showcase/index.html` | Standalone HTML showcase page (responsive grid, phone mockups) |
-| `dataset_sex/` | Blank dataset folders for YOLO sex training |
-| `dataset_pregnancy/` | Blank dataset folders for YOLO pregnancy training |
+| `dataset_sex/` | Dataset folders for YOLO sex training (empty — photos to collect) |
+| `dataset_pregnancy/` | YOLO pregnancy training folders (76 pregnant images organized) + `Female_preg_labels/` Label Studio export |
+| `dataset_detection/` | YOLO detection dataset (76 snail boxes: images + labels + `data.yaml`) |
+| `scripts/organize_pregnancy_dataset.mjs` | Re-runnable dataset organizer (Label Studio export → detection + classification layouts) |
+| `scripts/exif_fix_dataset.py` | Bakes EXIF orientation + optional resize (required before training phone photos) |
+| `scripts/build_colab_notebook.py` | Regenerates the Colab notebook from `colab/train_snail_pipeline.py` |
+| `colab/train_snail_pipeline.py` | Google Colab training script for the full 3-stage pipeline |
+| `colab/train_snail_pipeline.ipynb` | Same pipeline as a ready-to-open Colab notebook (File → Upload notebook) |
 | `snail-api-server/` | Placeholder for custom YOLO FastAPI server |
 
 ---

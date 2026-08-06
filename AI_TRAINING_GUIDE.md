@@ -12,16 +12,19 @@ This guide walks you through the entire pipeline:
 
 ---
 
-## Overview: Two Models
+## Overview: Three Stages
 
-You'll train **two separate YOLO classification models**:
+Your final app runs a **3-stage pipeline**: first **detect** the snail, then classify **sex**, then classify **pregnancy**.
 
-| Model | Classes | What it does |
-|---|---|---|
-| **Sex model** | `male`, `female` | Determines if the snail is male or female |
-| **Pregnancy model** | `pregnant`, `not_pregnant` | Determines if a female snail is gravid |
+| Stage | Model | Classes | What it does |
+|---|---|---|---|
+| **1. Detector** | YOLO detection | `snail` | Finds the snail's bounding box in the photo — lets the classifiers work on a clean crop, even when the snail doesn't fill the frame |
+| **2. Sex model** | YOLO classification | `male`, `female` | Determines if the snail is male or female (on the detected crop) |
+| **3. Pregnancy model** | YOLO classification | `pregnant`, `not_pregnant` | Determines if a female snail is gravid (on the detected crop) |
 
-After training, the FastAPI server will run both models and return the combined result.
+The FastAPI server runs all three in sequence: **detect → crop → classify sex → classify pregnancy** and returns the combined result.
+
+> 📊 **Training status (round 1):** `dataset_detection/` has **76 labeled images** (61 train / 15 val) — EXIF-orientation fixed, resized to 1280px (see the ⚠️ note in Phase 2 — this bug silently rotated most labels). A first detector was trained, but **76 images is too few for reliable detection** — it failed to find snails on the val images. **Plan: take more photos** (different snails, angles, backgrounds — see `PHOTO_SESSION_GUIDE.md`), re-label, re-run `organize_pregnancy_dataset.mjs` + `exif_fix_dataset.py`, and re-train. The sex dataset and `not_pregnant` images still need collecting too.
 
 ---
 
@@ -179,6 +182,38 @@ python organize_dataset.py
 
 Repeat for the pregnancy dataset (output folder: `dataset_pregnancy`).
 
+### Snail Detector Dataset (bounding boxes)
+
+The detector needs **bounding boxes**, not just class labels. If you labeled images in Label Studio with boxes (like the existing `Female_preg_labels` export), organize them with the included script:
+
+```bash
+node scripts/organize_pregnancy_dataset.mjs
+```
+
+This maps each Label Studio box to its photo, splits 80/20, and builds:
+
+```
+dataset_detection/              # ← YOLO detection dataset (class 0 = snail)
+├── images/train/  (61 photos)
+├── images/val/    (15 photos)
+├── labels/train/  (matching .txt boxes)
+├── labels/val/
+└── data.yaml                   # ultralytics config
+```
+
+### ⚠️ Fix phone-photo orientation before training (important!)
+
+Phone photos often store pixels in landscape with an EXIF rotation tag (the camera was held portrait). Label Studio displays them **rotated correctly**, so your boxes are relative to the rotated image — but YOLO/OpenCV reads the **raw pixels** and ignores the tag. Result: boxes point at the wrong place and the model can't learn (symptom: training runs, but the detector finds nothing).
+
+Bake the rotation into the pixels (and resize to 1280px for a fast upload — boxes are normalized, so resizing is safe):
+
+```bash
+python scripts/exif_fix_dataset.py --max-size 1280
+python scripts/exif_fix_dataset.py --check 4   # optional: draw boxes on 4 previews to eyeball
+```
+
+Then zip: `zip -r dataset_detection.zip dataset_detection/` (≈17MB with resize).
+
 **Your folder structure will look like:**
 
 ```
@@ -197,6 +232,11 @@ dataset_pregnancy/
 └── val/
     ├── pregnant/      (20+ photos)
     ├── not_pregnant/  (20+ photos)
+
+dataset_detection/
+├── images/train|val/           # snail photos
+├── labels/train|val/           # YOLO boxes (class 0 = snail)
+└── data.yaml
 ```
 
 ---
@@ -205,14 +245,15 @@ dataset_pregnancy/
 
 ### Step 1: Upload Dataset to Google Drive
 
-1. Zip both datasets:
+1. Zip the datasets you have ready:
    ```bash
    zip -r dataset_sex.zip dataset_sex/
    zip -r dataset_pregnancy.zip dataset_pregnancy/
+   zip -r dataset_detection.zip dataset_detection/
    ```
-2. Upload both `.zip` files to your Google Drive
+2. Upload the `.zip` files to your Google Drive
 3. Open [Google Colab](https://colab.research.google.com)
-4. Create a **new notebook**
+4. **Recommended:** use the ready-made **`colab/train_snail_pipeline.ipynb`** — in Colab click **File → Upload notebook** and select it (cells are already split, T4 GPU pre-set). Alternatively create a **new notebook** and paste the cells from `colab/train_snail_pipeline.py` (each `# ── Cell N:` block is one cell). If you only have the `.py` on Drive, you can also run `%run train_snail_pipeline.py` in a cell.
 5. Set runtime: **Runtime → Change runtime type → T4 GPU**
 
 ### Step 2: Mount Drive & Unzip
@@ -224,6 +265,7 @@ drive.mount('/content/drive')
 # Unzip datasets
 !unzip -q "/content/drive/MyDrive/dataset_sex.zip" -d "/content/"
 !unzip -q "/content/drive/MyDrive/dataset_pregnancy.zip" -d "/content/"
+!unzip -q "/content/drive/MyDrive/dataset_detection.zip" -d "/content/"
 ```
 
 ### Step 3: Install Ultralytics
@@ -232,7 +274,37 @@ drive.mount('/content/drive')
 !pip install ultralytics -q
 ```
 
-### Step 4: Train Sex Classification Model
+### Step 4: Train the Snail Detector (detection)
+
+Trains on `dataset_detection/` — this model finds the snail's bounding box in the photo.
+
+```python
+from ultralytics import YOLO
+
+model = YOLO("yolo11n.pt")  # nano detection model
+
+results = model.train(
+    data="/content/dataset_detection/data.yaml",
+    epochs=100,
+    imgsz=640,
+    batch=16,               # reduce to 8 if you get CUDA OOM errors
+    patience=20,
+    device="cuda",
+    # augmentation for small datasets
+    hsv_h=0.015, hsv_s=0.4, hsv_v=0.4,
+    degrees=15, translate=0.1, scale=0.5, shear=5, fliplr=0.5,
+    mosaic=1.0, mixup=0.1,
+    project="snail_detector",
+    name="det",
+    exist_ok=True,
+)
+
+# The best model is saved at:
+# /content/snail_detector/det/weights/best.pt
+print("✅ Detector trained!", model.names)  # expect {0: 'snail'}
+```
+
+### Step 5: Train Sex Classification Model
 
 ```python
 from ultralytics import YOLO
@@ -244,11 +316,14 @@ model = YOLO("yolo11n-cls.pt")  # nano — fastest, ~10MB
 # Train
 results = model.train(
     data="/content/dataset_sex",
-    epochs=50,          # more = better, but slower
+    epochs=100,         # small dataset → train longer
     imgsz=224,          # standard classification size
     batch=32,           # reduce if you get CUDA OOM errors
-    patience=10,        # stop if no improvement for 10 epochs
+    patience=15,        # stop if no improvement for 15 epochs
     device="cuda",      # use GPU
+    hsv_h=0.015, hsv_s=0.7, hsv_v=0.4,   # augmentation for small datasets
+    degrees=15, translate=0.1, scale=0.5, shear=5, fliplr=0.5,
+    mixup=0.1, cutmix=0.1,
     project="snail_sex",
     name="sex_model",
     exist_ok=True,
@@ -259,18 +334,21 @@ results = model.train(
 print("✅ Sex model trained!")
 ```
 
-### Step 5: Train Pregnancy Classification Model
+### Step 6: Train Pregnancy Classification Model
 
 ```python
 model2 = YOLO("yolo11n-cls.pt")
 
 results2 = model2.train(
     data="/content/dataset_pregnancy",
-    epochs=50,
+    epochs=100,
     imgsz=224,
     batch=32,
-    patience=10,
+    patience=15,
     device="cuda",
+    hsv_h=0.015, hsv_s=0.7, hsv_v=0.4,
+    degrees=15, translate=0.1, scale=0.5, shear=5, fliplr=0.5,
+    mixup=0.1, cutmix=0.1,
     project="snail_pregnancy",
     name="pregnancy_model",
     exist_ok=True,
@@ -280,28 +358,31 @@ results2 = model2.train(
 print("✅ Pregnancy model trained!")
 ```
 
-### Step 6: Download Trained Weights
+### Step 7: Download Trained Weights
 
 ```python
 # Copy to Drive for persistence
-!cp /content/snail_sex/sex_model/weights/best.pt   "/content/drive/MyDrive/snail_sex_model.pt"
+!cp /content/snail_detector/det/weights/best.pt       "/content/drive/MyDrive/snail_detector.pt"
+!cp /content/snail_sex/sex_model/weights/best.pt      "/content/drive/MyDrive/snail_sex_model.pt"
 !cp /content/snail_pregnancy/pregnancy_model/weights/best.pt "/content/drive/MyDrive/snail_pregnancy_model.pt"
 
 # Also export to ONNX for faster inference
 from ultralytics import YOLO
 
+YOLO("/content/snail_detector/det/weights/best.pt").export(format="onnx")
 YOLO("/content/snail_sex/sex_model/weights/best.pt").export(format="onnx")
 YOLO("/content/snail_pregnancy/pregnancy_model/weights/best.pt").export(format="onnx")
 
-!cp /content/snail_sex/sex_model/weights/best.onnx   "/content/drive/MyDrive/"
+!cp /content/snail_detector/det/weights/best.onnx        "/content/drive/MyDrive/"
+!cp /content/snail_sex/sex_model/weights/best.onnx       "/content/drive/MyDrive/"
 !cp /content/snail_pregnancy/pregnancy_model/weights/best.onnx "/content/drive/MyDrive/"
 
 print("✅ Models saved to Google Drive!")
 ```
 
-> ⏱️ **Training time:** ~10–15 minutes per model (50 epochs on T4 GPU)
+> ⏱️ **Training time:** ~15 minutes per model (100 epochs on T4 GPU)
 
-### Step 7: Test Your Model (Optional)
+### Step 8: Test Your Model (Optional)
 
 ```python
 from ultralytics import YOLO
@@ -327,11 +408,15 @@ print(f"Predicted: {top_class} ({confidence:.1%} confidence)")
 
 ### Create the API Server
 
-Create a file called `api_server.py`:
+Create a file called `api_server.py` — a **3-stage server**: detect the snail, crop it, then classify sex and pregnancy on the crop:
 
 ```python
 """
-Snail Sexing AI — FastAPI Prediction Server
+Snail Sexing AI — 3-Stage FastAPI Prediction Server
+
+Stage 1: Detect the snail (bounding box)
+Stage 2: Classify sex (male/female) on the crop
+Stage 3: Classify pregnancy (pregnant/not_pregnant) on the crop
 
 Run locally:  uvicorn api_server:app --reload --port 8000
 Deploy to Railway: see railway.json
@@ -341,13 +426,16 @@ import io
 import os
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from PIL import Image
+from PIL import Image, ImageOps
 from ultralytics import YOLO
 
 # ── Configuration ──────────────────────────────────────────────────
+DETECTOR_PATH = os.getenv("DETECTOR_PATH", "snail_detector.pt")
 SEX_MODEL_PATH = os.getenv("SEX_MODEL_PATH", "snail_sex_model.pt")
 PREGNANCY_MODEL_PATH = os.getenv("PREGNANCY_MODEL_PATH", "snail_pregnancy_model.pt")
-CONFIDENCE_THRESHOLD = 0.5  # minimum confidence to return a result
+CONFIDENCE_THRESHOLD = 0.5     # min confidence for classification results
+DETECT_CONF_THRESHOLD = 0.25   # min confidence for the detector
+MIN_BOX_FRACTION = 0.05        # ignore tiny boxes (less than 5% of image size)
 
 # ── FastAPI Setup ──────────────────────────────────────────────────
 app = FastAPI(title="Snail Sexing AI API")
@@ -361,23 +449,17 @@ app.add_middleware(
 
 # ── Load Models ────────────────────────────────────────────────────
 print("Loading models...")
+detector = YOLO(DETECTOR_PATH)
 sex_model = YOLO(SEX_MODEL_PATH)
 pregnancy_model = YOLO(PREGNANCY_MODEL_PATH)
 print("✅ Models loaded!")
 
 # ── Label Mappings ─────────────────────────────────────────────────
-SEX_LABELS = {0: "Male", 1: "Female"}
-# Note: YOLO orders classes alphabetically by folder name
-# If your folders are "male" and "female", YOLO assigns:
-#   0 = female (alphabetically first), 1 = male
-# Check with: print(sex_model.names)
-# Adjust the mapping below based on what you see:
-SEX_MAP = {0: "Female", 1: "Male"}  # <-- VERIFY THIS AFTER TRAINING
-
-PREGNANCY_MAP = {
-    0: "Not Pregnant",  # "not_pregnant" folder
-    1: "Pregnant",      # "pregnant" folder
-}
+# Note: YOLO orders classes alphabetically by folder name.
+# Check after training with: print(sex_model.names)  /  print(preg_model.names)
+# Adjust the mappings below based on what you see:
+SEX_MAP = {0: "Female", 1: "Male"}          # <-- VERIFY THIS AFTER TRAINING
+PREGNANCY_MAP = {0: "Not Pregnant", 1: "Pregnant"}  # <-- VERIFY THIS
 
 
 @app.get("/health")
@@ -389,29 +471,53 @@ async def health():
 async def classify(image: UploadFile = File(...)):
     # ── Read & validate image ───────────────────────────────────
     contents = await image.read()
-    pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+    # exif_transpose: phone photos carry an EXIF rotation tag; YOLO ignores it,
+    # so bake the rotation in before predicting, or the boxes/classes are wrong.
+    pil_image = ImageOps.exif_transpose(Image.open(io.BytesIO(contents))).convert("RGB")
 
-    # ── Run sex classification ──────────────────────────────────
-    sex_results = sex_model.predict(pil_image, verbose=False)
-    sex_probs = sex_results[0].probs
+    # ── Stage 1: detect the snail ───────────────────────────────
+    det_results = detector.predict(pil_image, verbose=False, conf=DETECT_CONF_THRESHOLD)
+    boxes = det_results[0].boxes
+    best_box = None
+    if boxes is not None and len(boxes) > 0:
+        candidates = []
+        for box, conf in zip(boxes.xyxy.cpu().numpy(), boxes.conf.cpu().numpy()):
+            w, h = box[2] - box[0], box[3] - box[1]
+            if w < MIN_BOX_FRACTION * pil_image.width or h < MIN_BOX_FRACTION * pil_image.height:
+                continue
+            candidates.append((box, float(conf)))
+        if candidates:
+            # pick the LARGEST detected snail
+            best_box = max(candidates, key=lambda c: (c[0][2] - c[0][0]) * (c[0][3] - c[0][1]))
+
+    if best_box is None:
+        return {
+            "sex": "Unknown",
+            "pregnancyStatus": "Unknown",
+            "confidence": 0,
+            "morphologicalNotes": "No snail detected in the image.",
+        }
+
+    box, det_conf = best_box
+    crop = pil_image.crop(tuple(int(v) for v in box))  # PIL crop: (left, top, right, bottom)
+
+    # ── Stage 2: classify sex on the crop ──────────────────────
+    sex_probs = sex_model.predict(crop, verbose=False)[0].probs
     sex_class_id = sex_probs.top1
     sex_confidence = float(sex_probs.top1conf)
-
     sex_label = SEX_MAP.get(sex_class_id, "Unknown")
 
-    # ── Run pregnancy classification (only meaningful for females)
+    # ── Stage 3: classify pregnancy (females only) ─────────────
     preg_label = "Not Pregnant"
     preg_confidence = 0.0
-
     if sex_label == "Female":
-        preg_results = pregnancy_model.predict(pil_image, verbose=False)
-        preg_probs = preg_results[0].probs
+        preg_probs = pregnancy_model.predict(crop, verbose=False)[0].probs
         preg_class_id = preg_probs.top1
         preg_confidence = float(preg_probs.top1conf)
         preg_label = PREGNANCY_MAP.get(preg_class_id, "Not Pregnant")
 
     # ── Generate morphological notes ────────────────────────────
-    notes_parts = []
+    notes_parts = [f"Snail detected ({det_conf:.0%} detection confidence)."]
     if sex_confidence >= CONFIDENCE_THRESHOLD:
         notes_parts.append(
             f"{sex_label} morphology identified with {sex_confidence:.1%} confidence."
@@ -428,7 +534,7 @@ async def classify(image: UploadFile = File(...)):
             notes_parts.append("Pregnancy classification below confidence threshold.")
 
     # ── Combined confidence ─────────────────────────────────────
-    combined_confidence = round(sex_confidence * 100, 1)
+    combined_confidence = round(max(sex_confidence, det_conf) * 100, 1)
 
     # ── Return result matching the app's expected format ────────
     return {
@@ -462,8 +568,8 @@ Pillow==11.0.0
 # Install deps
 pip install -r requirements.txt
 
-# Place your model files in the same directory
-# (snail_sex_model.pt and snail_pregnancy_model.pt)
+# Place your three model files in the same directory
+# (snail_detector.pt, snail_sex_model.pt, snail_pregnancy_model.pt)
 
 # Run the server
 uvicorn api_server:app --reload --port 8000
@@ -480,7 +586,7 @@ Expected response:
   "sex": "Male",
   "pregnancyStatus": "Not Pregnant",
   "confidence": 96.3,
-  "morphologicalNotes": "Male morphology identified with 96.3% confidence."
+  "morphologicalNotes": "Snail detected (98% detection confidence). Male morphology identified with 96.3% confidence."
 }
 ```
 
@@ -490,7 +596,7 @@ Expected response:
    - `api_server.py`
    - `requirements.txt`
    - `railway.json` (see below)
-   - Your two `.pt` model files
+   - Your three `.pt` model files (`snail_detector.pt`, `snail_sex_model.pt`, `snail_pregnancy_model.pt`)
 
 2. Create `railway.json`:
 
@@ -552,9 +658,10 @@ snail-sexing-ai/                  # ← Frontend (React app — you have this)
 │   └── ...
 
 snail-ai-server/                  # ← New — FastAPI server
-├── api_server.py                 # Prediction server
+├── api_server.py                 # 3-stage prediction server (detect → sex → pregnancy)
 ├── requirements.txt              # Python dependencies
 ├── railway.json                  # Railway deployment config
+├── snail_detector.pt             # Trained detector (finds the snail box)
 ├── snail_sex_model.pt            # Trained sex model
 ├── snail_pregnancy_model.pt      # Trained pregnancy model
 └── ...
@@ -563,6 +670,21 @@ snail-ai-server/                  # ← New — FastAPI server
 ---
 
 ## Troubleshooting
+
+### Issue: "Detector trains but finds no snail / boxes look rotated"
+This is the classic **EXIF orientation trap**: Label Studio showed your photos rotated correctly, but YOLO read the raw pixels (ignoring the EXIF tag), so the labels were rotated away from the snail. Fix:
+```bash
+python scripts/exif_fix_dataset.py --max-size 1280   # bakes rotation into the pixels
+zip -r dataset_detection.zip dataset_detection/      # re-zip, re-upload to Drive
+```
+Then re-train (Cell 2). Also run the same fix on any future phone-photo batch.
+
+### Issue: "Detector still can't find snails after the EXIF fix"
+The EXIF fix aligns the labels, but **76 images is simply too few for detection** to generalize (detection needs far more data than classification). What helps most, in order:
+1. **Collect more photos** — target **150–300 per class** (more snails, more angles, varied backgrounds; don't repeat the same snail/setup). This is the real fix.
+2. Check the diagnostic cell (Cell 6): if `mAP50` is above ~0.3 but detection is patchy, try `conf=0.05` in production or add more epochs.
+3. Try a bigger model: `yolo11s.pt` instead of `yolo11n.pt`.
+4. Reduce augmentation that hurts small data: `mosaic=0.5, mixup=0.0` if overfitting.
 
 ### Issue: "YOLO class IDs don't match"
 The class order depends on folder name alphabetical order. After training, check:
@@ -600,11 +722,12 @@ Reduce batch size: `batch=16` or `batch=8`
 label-studio start                          # → http://localhost:8080
 
 # 2. Organize dataset
-python organize_dataset.py
+python organize_dataset.py                       # classification splits
+node scripts/organize_pregnancy_dataset.mjs      # detection boxes → dataset_detection/
 
 # 3. Train in Colab
 #    -> Set runtime to T4 GPU
-#    -> Run the training cells
+#    -> Run colab/train_snail_pipeline.py (detector → sex → pregnancy)
 
 # 4. Run API locally
 pip install -r requirements.txt

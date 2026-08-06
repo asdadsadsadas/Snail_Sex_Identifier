@@ -158,6 +158,15 @@ Then fix `SEX_MAP` in your FastAPI server accordingly (see `AI_TRAINING_GUIDE.md
 
 ---
 
+## 📊 Round 1 — What We Learned (pregnancy dataset, 76 photos)
+
+Feedback from the first real labeling + training round (applies to the sex dataset too):
+
+1. **76 images was not enough.** The detector trained but couldn't reliably find snails on unseen images. For detection, plan for **150–300 photos per class**, not 50–150.
+2. **Phone EXIF orientation is a silent label-killer.** 62 of 77 photos were stored rotated (EXIF orientation 6) — Label Studio displayed them correctly, but YOLO read raw pixels, so the boxes were ~90° off. **Always run `python scripts/exif_fix_dataset.py --max-size 1280` after organizing** (it also converts iPhone MPO files to plain JPEG). Verify with `--check 4`.
+3. **Variety beats volume.** A detector learns "snail in a white dish" quickly; it needs *different snails, angles, zoom levels, and backgrounds* to generalize. Spread photos across as many individuals as possible.
+4. **Photographing in a fixed orientation helps**: hold the phone the same way each shot, or don't worry — the EXIF fix handles it.
+
 ## ✅ Session Checklist
 
 - [ ] Feed snails 30–60 min before session
@@ -166,4 +175,5 @@ Then fix `SEX_MAP` in your FastAPI server accordingly (see `AI_TRAINING_GUIDE.md
 - [ ] Name files `snail_XX_YYY.jpg` per snail
 - [ ] Verify sex per snail via the right-tentacle test → log in a spreadsheet
 - [ ] Move photos into `dataset_sex/train|val/male|female/` (split **by snail**)
+- [ ] Run `scripts/exif_fix_dataset.py` after organizing (phone photos!)
 - [ ] Train in Colab with the augmentation settings above
