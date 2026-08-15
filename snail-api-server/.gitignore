@@ -1,10 +1,11 @@
-# Model weights — snail_detector.pt is small (~5 MB) so it's committed to the
-# repo for zero-friction deploys (Render/Railway pick it up with the code).
-# Keep the rest out: .onnx is redundant (server loads .pt by default) and
-# last.pt is the final-epoch checkpoint (best.pt is what we serve).
+# Model weights — the detector (.pt + .onnx) is small (~16 MB total) and
+# committed for zero-friction deploys. The ONNX copy is what the server loads
+# on Render (onnxruntime — light); the .pt is the torch fallback. Keep
+# last.pt (final-epoch checkpoint) and future classifiers out for now.
 *.pt
 *.onnx
 !snail_detector.pt
+!snail_detector.onnx
 
 # Python
 __pycache__/

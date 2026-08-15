@@ -1,7 +1,10 @@
 # Minimum versions — installs on Python 3.10–3.14.
-# (Exact pins like Pillow==11.0.0 have no prebuilt wheels on Python 3.14.)
+# onnxruntime serves the ONNX models (~10x less RAM than torch → fits Render
+# free tier). ultralytics is kept only as a fallback for .pt-only models.
 fastapi>=0.115
 uvicorn>=0.30
 python-multipart>=0.0.12
+onnxruntime>=1.18
+numpy>=1.24
 ultralytics>=8.3.0
 Pillow>=11.0.0

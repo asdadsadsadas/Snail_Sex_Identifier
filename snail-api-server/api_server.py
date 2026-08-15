@@ -1,45 +1,49 @@
 """
 Snail Sexing AI — 3-Stage FastAPI Prediction Server
 
-Stage 1: Detect the snail (bounding box)          -> snail_detector.pt
-Stage 2: Classify sex (male/female) on the crop   -> snail_sex_model.pt
-Stage 3: Classify pregnancy (preg/not_preg) on the crop -> snail_pregnancy_model.pt
+Stage 1: Detect the snail (bounding box)          -> snail_detector
+Stage 2: Classify sex (male/female) on the crop   -> snail_sex_model
+Stage 3: Classify pregnancy (preg/not_preg) on the crop -> snail_pregnancy_model
 
-The server degrades gracefully: only the detector is required. If the sex or
-pregnancy model files are missing, that stage returns "Unknown" with an
-explanatory note instead of crashing — so you can deploy as soon as the
-detector is trained and plug the classifiers in later.
+Each model can be served from an **ONNX** file (preferred — runs on
+onnxruntime, ~10x less RAM than torch, fits Render's free 512 MB tier) or a
+**.pt** file (falls back to ultralytics/torch; heavier). The server degrades
+gracefully: only the detector is required. If the sex or pregnancy model files
+are missing, those stages return "Unknown" with an explanatory note — deploy
+with just the detector, plug the classifiers in later.
 
 Run locally:      uvicorn api_server:app --reload --port 8000
-Deploy to Railway: see railway.json
+Deploy to Render: see render.yaml (blueprint) or README.md
 """
 
 import io
 import os
 import urllib.request
-from typing import Optional
+from typing import Optional, Tuple
 
+import numpy as np
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageOps
-from ultralytics import YOLO
+
+import onnxruntime as ort
 
 # ── Configuration ──────────────────────────────────────────────────
-# Each model can be a .pt or .onnx file (ultralytics loads both).
-DETECTOR_PATH = os.getenv("DETECTOR_PATH", "snail_detector.pt")
-SEX_MODEL_PATH = os.getenv("SEX_MODEL_PATH", "snail_sex_model.pt")
-PREGNANCY_MODEL_PATH = os.getenv("PREGNANCY_MODEL_PATH", "snail_pregnancy_model.pt")
+# Each model can be a .pt or .onnx file. ONNX is preferred when both exist.
+DETECTOR_PATH = os.getenv("DETECTOR_PATH", "snail_detector")
+SEX_MODEL_PATH = os.getenv("SEX_MODEL_PATH", "snail_sex_model")
+PREGNANCY_MODEL_PATH = os.getenv("PREGNANCY_MODEL_PATH", "snail_pregnancy_model")
 # Optional: if a model file is missing at startup, download it from these URLs.
-# (Useful on hosts where you can't commit weights — e.g. a direct file URL.)
 DETECTOR_URL = os.getenv("DETECTOR_URL")
 SEX_MODEL_URL = os.getenv("SEX_MODEL_URL")
 PREGNANCY_MODEL_URL = os.getenv("PREGNANCY_MODEL_URL")
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))   # min confidence for classification results
 DETECT_CONF_THRESHOLD = float(os.getenv("DETECT_CONF_THRESHOLD", "0.25"))  # min confidence for the detector
 MIN_BOX_FRACTION = 0.05        # ignore tiny boxes (less than 5% of image size)
+IMGSZ = int(os.getenv("IMGSZ", "640"))   # detection input size (must match the exported model)
 
 # ── FastAPI Setup ──────────────────────────────────────────────────
-app = FastAPI(title="Snail Sexing AI API", version="1.0.0")
+app = FastAPI(title="Snail Sexing AI API", version="1.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,19 +53,23 @@ app.add_middleware(
 )
 
 
-def _load(path: str) -> Optional[YOLO]:
-    """Load a YOLO model if the file exists, else None (stage skipped)."""
-    if not os.path.exists(path):
-        print(f"  ⚠ {path} not found — this stage will be skipped")
-        return None
-    print(f"  ✅ loaded {path}")
-    return YOLO(path)
+def _resolve_model(base: str) -> Tuple[Optional[str], Optional[str]]:
+    """Return (path, kind) for the best available model file, or (None, None).
+
+    kind is "onnx" or "pt". ONNX wins when both exist (light inference).
+    """
+    if os.path.exists(base + ".onnx"):
+        return base + ".onnx", "onnx"
+    if os.path.exists(base + ".pt"):
+        return base + ".pt", "pt"
+    return None, None
 
 
-def _ensure_model(path: str, url: Optional[str]) -> None:
-    """Download a model at startup if the file is missing and a URL is set."""
-    if os.path.exists(path) or not url:
+def _ensure_model(base: str, url: Optional[str]) -> None:
+    """Download base.onnx (or .pt) at startup if the file is missing and a URL is set."""
+    if os.path.exists(base + ".onnx") or os.path.exists(base + ".pt") or not url:
         return
+    path = base + ".onnx"
     print(f"  ⬇ {path} missing — downloading from MODEL_URL env...")
     urllib.request.urlretrieve(url, path)
     if not os.path.exists(path) or os.path.getsize(path) == 0:
@@ -69,20 +77,126 @@ def _ensure_model(path: str, url: Optional[str]) -> None:
     print(f"  ✅ downloaded {path} ({os.path.getsize(path) / 1e6:.1f} MB)")
 
 
+# ── Detector ───────────────────────────────────────────────────────
+class Detector:
+    """Snail detector. ONNX Runtime backend (light) with ultralytics fallback."""
+
+    def __init__(self, base: str) -> None:
+        path, kind = _resolve_model(base)
+        if path is None:
+            raise FileNotFoundError(f"🚨 No model found for {base} (.onnx or .pt)")
+        self.path = path
+        self.kind = kind
+        if kind == "onnx":
+            self._session = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+            print(f"  ✅ loaded {path} (onnxruntime — light)")
+        else:
+            from ultralytics import YOLO  # heavy torch import — only when needed
+            self._model = YOLO(path)
+            print(f"  ✅ loaded {path} (ultralytics — heavier)")
+        self._input_name = None
+        if kind == "onnx":
+            self._input_name = self._session.get_inputs()[0].name
+
+    def detect(self, pil_image: Image.Image) -> Optional[Tuple[list, float]]:
+        """Return (xyxy_box_in_original_pixels, confidence) of the largest snail, or None."""
+        if self.kind == "onnx":
+            return self._detect_onnx(pil_image)
+        return self._detect_ultralytics(pil_image)
+
+    # ── ONNX path (no torch) ────────────────────────────────────
+    def _detect_onnx(self, pil_image: Image.Image) -> Optional[Tuple[list, float]]:
+        w0, h0 = pil_image.size
+        # letterbox like ultralytics: pad to square with gray 114, bilinear resize
+        r = min(IMGSZ / w0, IMGSZ / h0)
+        nw, nh = round(w0 * r), round(h0 * r)
+        dw, dh = IMGSZ - nw, IMGSZ - nh
+        left, top = dw // 2, dh // 2
+        canvas = Image.new("RGB", (IMGSZ, IMGSZ), (114, 114, 114))
+        canvas.paste(pil_image.resize((nw, nh), Image.BILINEAR), (left, top))
+
+        x = np.asarray(canvas, dtype=np.float32) / 255.0
+        x = x.transpose(2, 0, 1)[None]  # (1,3,IMGSZ,IMGSZ)
+        out = self._session.run(None, {self._input_name: x})[0][0]  # (4+nc, 8400)
+
+        conf = out[4]
+        keep = np.where(conf >= DETECT_CONF_THRESHOLD)[0]
+        candidates = []
+        for i in keep:
+            cx, cy, bw, bh = float(out[0, i]), float(out[1, i]), float(out[2, i]), float(out[3, i])
+            x1 = (cx - bw / 2 - left) / r
+            y1 = (cy - bh / 2 - top) / r
+            x2 = (cx + bw / 2 - left) / r
+            y2 = (cy + bh / 2 - top) / r
+            if x2 - x1 < MIN_BOX_FRACTION * w0 or y2 - y1 < MIN_BOX_FRACTION * h0:
+                continue
+            candidates.append(([x1, y1, x2, y2], float(conf[i])))
+        if not candidates:
+            return None
+        # pick the LARGEST detected snail (same policy as the ultralytics path)
+        return max(candidates, key=lambda c: (c[0][2] - c[0][0]) * (c[0][3] - c[0][1]))
+
+    # ── ultralytics fallback (torch) ────────────────────────────
+    def _detect_ultralytics(self, pil_image: Image.Image) -> Optional[Tuple[list, float]]:
+        boxes = self._model.predict(pil_image, verbose=False, conf=DETECT_CONF_THRESHOLD)[0].boxes
+        if boxes is None or len(boxes) == 0:
+            return None
+        candidates = []
+        for box, conf in zip(boxes.xyxy.cpu().numpy(), boxes.conf.cpu().numpy()):
+            w, h = box[2] - box[0], box[3] - box[1]
+            if w < MIN_BOX_FRACTION * pil_image.width or h < MIN_BOX_FRACTION * pil_image.height:
+                continue
+            candidates.append((list(map(float, box)), float(conf)))
+        if not candidates:
+            return None
+        return max(candidates, key=lambda c: (c[0][2] - c[0][0]) * (c[0][3] - c[0][1]))
+
+
+def _load_classifier(base: str):
+    """Load a YOLO classification model (ONNX preferred, ultralytics fallback), or None."""
+    path, kind = _resolve_model(base)
+    if path is None:
+        return None
+    if kind == "onnx":
+        session = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+        return {"kind": "onnx", "session": session, "input": session.get_inputs()[0].name}
+    from ultralytics import YOLO  # heavy — only when a .pt classifier is present
+    return {"kind": "pt", "model": YOLO(path)}
+
+
+def _classify(model, crop: Image.Image) -> Tuple[int, float]:
+    """Run a classifier on the crop -> (class_id, confidence)."""
+    if model["kind"] == "onnx":
+        x = np.asarray(crop.resize((224, 224), Image.BILINEAR), dtype=np.float32) / 255.0
+        x = x.transpose(2, 0, 1)[None]
+        logits = model["session"].run(None, {model["input"]: x})[0][0]
+        probs = np.exp(logits - logits.max()) / np.sum(np.exp(logits - logits.max()))
+        return int(np.argmax(probs)), float(probs.max())
+    q = model["model"].predict(crop, verbose=False)[0].probs
+    return int(q.top1), float(q.top1conf)
+
+
 # ── Load Models ────────────────────────────────────────────────────
 print("Loading models...")
 _ensure_model(DETECTOR_PATH, DETECTOR_URL)
 _ensure_model(SEX_MODEL_PATH, SEX_MODEL_URL)
 _ensure_model(PREGNANCY_MODEL_PATH, PREGNANCY_MODEL_URL)
-detector = _load(DETECTOR_PATH)
-sex_model = _load(SEX_MODEL_PATH)
-pregnancy_model = _load(PREGNANCY_MODEL_PATH)
+
+try:
+    detector = Detector(DETECTOR_PATH)
+except FileNotFoundError as e:
+    detector = None
+    print(f"  ⚠ {e}")
+
+sex_model = _load_classifier(SEX_MODEL_PATH)
+if sex_model is None:
+    print(f"  ⚠ {SEX_MODEL_PATH}.onnx/.pt not found — sex stage will be skipped")
+pregnancy_model = _load_classifier(PREGNANCY_MODEL_PATH)
+if pregnancy_model is None:
+    print(f"  ⚠ {PREGNANCY_MODEL_PATH}.onnx/.pt not found — pregnancy stage will be skipped")
+
 print("✅ Startup done. Detector:", detector is not None,
       "| Sex:", sex_model is not None, "| Pregnancy:", pregnancy_model is not None)
-
-if detector is None:
-    print("🚨 No detector model found — /classify will return 503 until "
-          f"DETECTOR_PATH ({DETECTOR_PATH}) exists.")
 
 # ── Label Mappings ─────────────────────────────────────────────────
 # Note: YOLO orders classes alphabetically by folder name.
@@ -97,6 +211,7 @@ async def health():
     return {
         "status": "ok",
         "detector": detector is not None,
+        "detectorBackend": detector.kind if detector else None,
         "sexModel": sex_model is not None,
         "pregnancyModel": pregnancy_model is not None,
     }
@@ -122,21 +237,8 @@ async def classify(image: UploadFile = File(...)):
             "morphologicalNotes": "Detector model not deployed on this server yet.",
         }, 503
 
-    det_results = detector.predict(pil_image, verbose=False, conf=DETECT_CONF_THRESHOLD)
-    boxes = det_results[0].boxes
-    best_box = None
-    if boxes is not None and len(boxes) > 0:
-        candidates = []
-        for box, conf in zip(boxes.xyxy.cpu().numpy(), boxes.conf.cpu().numpy()):
-            w, h = box[2] - box[0], box[3] - box[1]
-            if w < MIN_BOX_FRACTION * pil_image.width or h < MIN_BOX_FRACTION * pil_image.height:
-                continue
-            candidates.append((box, float(conf)))
-        if candidates:
-            # pick the LARGEST detected snail
-            best_box = max(candidates, key=lambda c: (c[0][2] - c[0][0]) * (c[0][3] - c[0][1]))
-
-    if best_box is None:
+    found = detector.detect(pil_image)
+    if found is None:
         return {
             "sex": "Unknown",
             "pregnancyStatus": "Unknown",
@@ -144,25 +246,21 @@ async def classify(image: UploadFile = File(...)):
             "morphologicalNotes": "No snail detected in the image.",
         }
 
-    box, det_conf = best_box
+    box, det_conf = found
     crop = pil_image.crop(tuple(int(v) for v in box))  # PIL crop: (left, top, right, bottom)
 
     # ── Stage 2: classify sex on the crop ──────────────────────
     sex_label = "Unknown"
     sex_confidence = 0.0
     if sex_model is not None:
-        sex_probs = sex_model.predict(crop, verbose=False)[0].probs
-        sex_class_id = sex_probs.top1
-        sex_confidence = float(sex_probs.top1conf)
+        sex_class_id, sex_confidence = _classify(sex_model, crop)
         sex_label = SEX_MAP.get(sex_class_id, "Unknown")
 
     # ── Stage 3: classify pregnancy (females only) ─────────────
     preg_label = "Not Pregnant"
     preg_confidence = 0.0
     if sex_label == "Female" and pregnancy_model is not None:
-        preg_probs = pregnancy_model.predict(crop, verbose=False)[0].probs
-        preg_class_id = preg_probs.top1
-        preg_confidence = float(preg_probs.top1conf)
+        preg_class_id, preg_confidence = _classify(pregnancy_model, crop)
         preg_label = PREGNANCY_MAP.get(preg_class_id, "Not Pregnant")
 
     # ── Generate morphological notes ────────────────────────────
