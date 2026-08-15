@@ -23,5 +23,11 @@ export default defineConfig({
   server: {
     hmr: disableHmr ? false : undefined,
     watch: disableHmr ? null : {},
+    // Proxy API calls through the same HTTPS origin so phones don't hit
+    // mixed-content blocking (the app is HTTPS; the API is plain HTTP).
+    proxy: {
+      "/classify": { target: "http://localhost:8000", changeOrigin: true },
+      "/health": { target: "http://localhost:8000", changeOrigin: true },
+    },
   },
 });

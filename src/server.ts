@@ -100,7 +100,7 @@ Guidelines:
 
 /** Health check */
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", model: "gemini-2.0-flash" });
+  res.json({ status: "ok", model: "gemini-flash-latest" });
 });
 
 /**
@@ -132,7 +132,7 @@ app.post("/classify", upload.single("image"), async (req, res) => {
     const client = getAiClient();
 
     const response = await client.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-flash-latest",
       contents: [
         {
           role: "user",

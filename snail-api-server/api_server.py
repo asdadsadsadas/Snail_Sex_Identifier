@@ -16,8 +16,11 @@ Run locally:      uvicorn api_server:app --reload --port 8000
 Deploy to Render: see render.yaml (blueprint) or README.md
 """
 
+import base64
 import io
+import json
 import os
+import time
 import urllib.request
 from typing import Optional, Tuple
 
@@ -50,6 +53,9 @@ CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.5"))   # min c
 DETECT_CONF_THRESHOLD = float(os.getenv("DETECT_CONF_THRESHOLD", "0.25"))  # min confidence for the detector
 MIN_BOX_FRACTION = 0.05        # ignore tiny boxes (less than 5% of image size)
 IMGSZ = int(os.getenv("IMGSZ", "640"))   # detection input size (must match the exported model)
+# Optional Gemini Vision fallback for sex/pregnancy when the classifier models
+# aren't deployed yet — get a free key at https://aistudio.google.com/apikey
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # ── FastAPI Setup ──────────────────────────────────────────────────
 app = FastAPI(title="Snail Sexing AI API", version="1.1.0")
@@ -185,6 +191,78 @@ def _classify(model, crop: Image.Image) -> Tuple[int, float]:
     return int(q.top1), float(q.top1conf)
 
 
+# ── Gemini Vision fallback (used when classifier models aren't deployed) ──
+GEMINI_PROMPT = (
+    "You are a malacologist specializing in gastropod morphology. Analyze this snail photo "
+    "and classify its sex and pregnancy status.\n\n"
+    "Morphological indicators:\n"
+    "- MALES: narrower shell aperture, more elongated shell shape, right tentacle modified "
+    "into a copulatory organ (thicker/curved), operculum darker and more heavily calcified, "
+    "higher shell length-to-width ratio\n"
+    "- FEMALES: wider shell aperture, broader/rounder shell base, lighter operculum "
+    "pigmentation, more rounded shell apex, more soft-tissue development in the mantle area\n\n"
+    "For pregnancy (gravid status in females):\n"
+    "- Look for visible eggs/embryos through the shell (pale yellow/white masses)\n"
+    "- Swelling in the mantle cavity area\n"
+    "- Only assess for female specimens\n\n"
+    'Respond with valid JSON only, no markdown. Exact schema: '
+    '{"sex": "Male" or "Female", "pregnancyStatus": "Pregnant" or "Not Pregnant", '
+    '"confidence": number 0-100, "morphologicalNotes": "brief description"}\n\n'
+    "- If not a snail or poor quality, set confidence below 50\n"
+    '- pregnancyStatus should only be "Pregnant" if sex is "Female"\n'
+    "- Be conservative with confidence; only give 85%+ when features are clear"
+)
+
+
+def _gemini_classify(crop: Image.Image) -> Optional[dict]:
+    """Classify the crop with Gemini Vision. Returns a dict or None on failure."""
+    if not GEMINI_API_KEY:
+        return None
+    buf = io.BytesIO()
+    crop.save(buf, "JPEG", quality=90)
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={GEMINI_API_KEY}"
+    body = json.dumps({
+        "contents": [{
+            "parts": [
+                {"text": GEMINI_PROMPT},
+                {"inlineData": {"mimeType": "image/jpeg", "data": b64}},
+            ]
+        }],
+        "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
+    }).encode()
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+    last_err = None
+    for attempt in range(4):  # retry — Gemini 503s intermittently under load
+        try:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                data = json.loads(resp.read().decode())
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+            result = json.loads(text)
+            sex = result.get("sex")
+            preg = result.get("pregnancyStatus")
+            conf = float(result.get("confidence", 50))
+            notes = str(result.get("morphologicalNotes", "")).strip()
+            if sex not in ("Male", "Female"):
+                return None
+            if preg not in ("Pregnant", "Not Pregnant"):
+                preg = "Not Pregnant"
+            if sex == "Male" and preg == "Pregnant":
+                preg = "Not Pregnant"
+            return {
+                "sex": sex,
+                "pregnancyStatus": preg,
+                "confidence": min(100.0, max(0.0, conf)),
+                "morphologicalNotes": notes,
+            }
+        except Exception as e:  # noqa: BLE001 — retry, then fail soft
+            last_err = e
+            if attempt < 3:
+                time.sleep(2 * (attempt + 1))
+    print(f"  ⚠ Gemini call failed after retries: {last_err}")
+    return None
+
+
 # ── Load Models ────────────────────────────────────────────────────
 print("Loading models...")
 _ensure_model(DETECTOR_PATH, DETECTOR_URL)
@@ -258,31 +336,45 @@ async def classify(image: UploadFile = File(...)):
     box, det_conf = found
     crop = pil_image.crop(tuple(int(v) for v in box))  # PIL crop: (left, top, right, bottom)
 
-    # ── Stage 2: classify sex on the crop ──────────────────────
+    # ── Stages 2+3: classify sex + pregnancy on the crop ────────
+    # Priority: trained classifier models -> Gemini Vision fallback -> Unknown.
     sex_label = "Unknown"
     sex_confidence = 0.0
+    preg_label = "Not Pregnant"
+    preg_confidence = 0.0
+    gemini_result = None
+
     if sex_model is not None:
         sex_class_id, sex_confidence = _classify(sex_model, crop)
         sex_label = SEX_MAP.get(sex_class_id, "Unknown")
-
-    # ── Stage 3: classify pregnancy (females only) ─────────────
-    preg_label = "Not Pregnant"
-    preg_confidence = 0.0
-    if sex_label == "Female" and pregnancy_model is not None:
-        preg_class_id, preg_confidence = _classify(pregnancy_model, crop)
-        preg_label = PREGNANCY_MAP.get(preg_class_id, "Not Pregnant")
+        if sex_label == "Female" and pregnancy_model is not None:
+            preg_class_id, preg_confidence = _classify(pregnancy_model, crop)
+            preg_label = PREGNANCY_MAP.get(preg_class_id, "Not Pregnant")
+    elif GEMINI_API_KEY:
+        # Classifier models not deployed yet — use Gemini Vision on the crop
+        gemini_result = _gemini_classify(crop)
+        if gemini_result is not None:
+            sex_label = gemini_result["sex"]
+            preg_label = gemini_result["pregnancyStatus"]
+            sex_confidence = gemini_result["confidence"] / 100.0
+            preg_confidence = sex_confidence if sex_label == "Female" else 0.0
 
     # ── Generate morphological notes ────────────────────────────
     notes_parts = [f"Snail detected ({det_conf:.0%} detection confidence)."]
     if sex_label == "Unknown":
-        notes_parts.append("Sex classification not available yet (sex model not deployed).")
+        if GEMINI_API_KEY:
+            notes_parts.append("Sex classification unavailable right now.")
+        else:
+            notes_parts.append("Sex classification not available yet (sex model not deployed).")
     elif sex_confidence >= CONFIDENCE_THRESHOLD:
         notes_parts.append(f"{sex_label} morphology identified with {sex_confidence:.1%} confidence.")
     else:
         notes_parts.append("Sex classification below confidence threshold.")
 
     if sex_label == "Female":
-        if pregnancy_model is None:
+        if gemini_result is not None:
+            notes_parts.append(f"Pregnancy status: {preg_label} ({preg_confidence:.1%} confidence).")
+        elif pregnancy_model is None:
             notes_parts.append("Pregnancy classification not available yet (pregnancy model not deployed).")
         elif preg_confidence >= CONFIDENCE_THRESHOLD:
             notes_parts.append(f"Pregnancy status: {preg_label} ({preg_confidence:.1%} confidence).")
