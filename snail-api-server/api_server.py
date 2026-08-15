@@ -233,9 +233,11 @@ def _gemini_classify(crop: Image.Image) -> Optional[dict]:
     }).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
     last_err = None
-    for attempt in range(4):  # retry — Gemini 503s intermittently under load
+    # Total budget must fit under Render's ~60s proxy timeout (the classify
+    # request is killed at ~62s otherwise). 2 attempts x 20s + 3s sleep = ~43s.
+    for attempt in range(2):
         try:
-            with urllib.request.urlopen(req, timeout=45) as resp:
+            with urllib.request.urlopen(req, timeout=20) as resp:
                 data = json.loads(resp.read().decode())
             text = data["candidates"][0]["content"]["parts"][0]["text"]
             result = json.loads(text)
@@ -257,8 +259,9 @@ def _gemini_classify(crop: Image.Image) -> Optional[dict]:
             }
         except Exception as e:  # noqa: BLE001 — retry, then fail soft
             last_err = e
-            if attempt < 3:
-                time.sleep(2 * (attempt + 1))
+            print(f"  ⚠ Gemini attempt {attempt + 1}/2 failed: {e}")
+            if attempt < 1:
+                time.sleep(3)
     print(f"  ⚠ Gemini call failed after retries: {last_err}")
     return None
 
