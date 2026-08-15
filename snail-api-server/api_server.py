@@ -30,9 +30,18 @@ import onnxruntime as ort
 
 # ── Configuration ──────────────────────────────────────────────────
 # Each model can be a .pt or .onnx file. ONNX is preferred when both exist.
-DETECTOR_PATH = os.getenv("DETECTOR_PATH", "snail_detector")
-SEX_MODEL_PATH = os.getenv("SEX_MODEL_PATH", "snail_sex_model")
-PREGNANCY_MODEL_PATH = os.getenv("PREGNANCY_MODEL_PATH", "snail_pregnancy_model")
+# The *_PATH vars are BASE names (no extension) — the loader appends .onnx/.pt
+# and prefers .onnx. A trailing .pt/.onnx is tolerated for backward compat.
+def _base(path: str) -> str:
+    for ext in (".onnx", ".pt"):
+        if path.endswith(ext):
+            return path[: -len(ext)]
+    return path
+
+
+DETECTOR_PATH = _base(os.getenv("DETECTOR_PATH", "snail_detector"))
+SEX_MODEL_PATH = _base(os.getenv("SEX_MODEL_PATH", "snail_sex_model"))
+PREGNANCY_MODEL_PATH = _base(os.getenv("PREGNANCY_MODEL_PATH", "snail_pregnancy_model"))
 # Optional: if a model file is missing at startup, download it from these URLs.
 DETECTOR_URL = os.getenv("DETECTOR_URL")
 SEX_MODEL_URL = os.getenv("SEX_MODEL_URL")
