@@ -69,6 +69,42 @@ VITE_YOLO_API_URL=https://your-api.onrender.com   # or your-api.up.railway.app
 
 The app sends photos to `<url>/classify` and shows the result. Mock fallback stays active if the API is down.
 
+## 6. 🎪 Booth pin mode (science-fair demo) — fixed results per snail
+
+By default, Gemini gives slightly different answers on every scan — the same snail could show
+"Female" one minute and "Male" the next. For a booth demo you want **each snail to always show
+the same result**. Booth pin mode does that: you pin each of your 3 booth snails to a fixed
+sex/pregnancy, and the server matches every scan against reference photos of them — **Gemini is
+bypassed entirely on a match**, so results are 100% consistent.
+
+**Setup (5 minutes):**
+
+1. Create photo folders and drop **4–8 phone photos per snail** (same container/spot/lighting as
+the booth):
+   ```
+   demo_pins/snail1/  demo_pins/snail2/  demo_pins/snail3/
+   ```
+2. Edit the `SNAILS` list at the top of `build_demo_pins.py` — set each snail's fixed
+   `sex`, `pregnancyStatus`, `confidence`, and `morphologicalNotes`.
+3. Generate the config + restart the server:
+   ```bash
+   python build_demo_pins.py
+   # → writes demo_pins.json; restart uvicorn
+   ```
+4. **Verify BEFORE the fair** that each snail matches reliably:
+   ```bash
+   python check_demo_pins.py demo_pins/snail1/01.jpg demo_pins/snail2/01.jpg
+   # expect: MATCH ✅ snail1 (crop X<=10 & full Y<=20)   ...
+   ```
+   If a photo shows `NO MATCH`, add more reference photos of that snail and rebuild.
+
+**How it works:** each scan is compared to every reference photo using a difference hash
+(robust to lighting/brightness) on the detected snail crop **and** the full frame. A pin only
+fires when **both** are under their thresholds (defaults crop≤10, full≤20 out of 64) — the
+crop identifies the snail, the full frame confirms it's the same container/scene, which stops
+similar-looking snails from getting confused. The pinned result is returned — no Gemini, no
+variance. `GET /health` reports `demoPins` so you can confirm it's active.
+
 ## Verify class IDs after training
 
 YOLO orders classes alphabetically by folder name. After training the classifiers, check:

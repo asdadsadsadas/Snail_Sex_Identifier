@@ -57,6 +57,11 @@ IMGSZ = int(os.getenv("IMGSZ", "640"))   # detection input size (must match the 
 # aren't deployed yet — get a free key at https://aistudio.google.com/apikey
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# Booth pin mode (science-fair demo): pin specific snails to FIXED results so
+# the same snail always shows the same sex/pregnancy (no Gemini variance).
+# Config file: demo_pins.json — see build_demo_pins.py to generate it.
+DEMO_PINS_PATH = os.getenv("DEMO_PINS_PATH", "demo_pins.json")
+
 # ── FastAPI Setup ──────────────────────────────────────────────────
 app = FastAPI(title="Snail Sexing AI API", version="1.1.0")
 
@@ -165,6 +170,131 @@ class Detector:
         if not candidates:
             return None
         return max(candidates, key=lambda c: (c[0][2] - c[0][0]) * (c[0][3] - c[0][1]))
+
+# ── Booth Pin Mode (demo: fixed results for known snails) ──────────
+def _dhash(img: Image.Image, hash_size: int = 8) -> int:
+    """Difference hash — a 64-bit int, robust to brightness/lighting changes.
+
+    Same image under different lighting → very close hashes (small hamming
+    distance). Different subjects → far apart. This is what lets us pin the
+    3 booth snails to fixed results regardless of Gemini.
+    """
+    img = img.convert("L").resize((hash_size + 1, hash_size), Image.BILINEAR)
+    px = list(img.getdata())
+    bits = 0
+    for row in range(hash_size):
+        for col in range(hash_size):
+            bits <<= 1
+            if px[row * (hash_size + 1) + col] > px[row * (hash_size + 1) + col + 1]:
+                bits |= 1
+    return bits
+
+
+def _hamming(a: int, b: int) -> int:
+    return bin(a ^ b).count("1")
+
+
+class DemoPins:
+    """Matches an incoming photo against reference photos of the booth snails.
+
+    On a match the pinned result is returned instead of running Gemini, so
+    results are deterministic per snail. A pin only fires when BOTH signals
+    agree below their thresholds:
+      • crop distance  — the detected snail crop (the snail itself)
+      • full distance  — the whole frame (the snail's container/scene, which
+        is unique per booth snail and separates similar-looking snails)
+    This dual check makes the demo reliable while avoiding false matches.
+    """
+
+    def __init__(self, path: str, detector: Optional[Detector]) -> None:
+        self.pins: list[dict] = []
+        self.enabled = False
+        self.crop_threshold = 10
+        self.full_threshold = 20
+        if not os.path.exists(path):
+            print(f"  ⓘ {path} not found — booth pin mode off")
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠ demo_pins.json unreadable: {e} — booth pin mode off")
+            return
+        self.crop_threshold = int(data.get("cropThreshold", self.crop_threshold))
+        self.full_threshold = int(data.get("fullThreshold", self.full_threshold))
+        for pin in data.get("pins", []):
+            refs = []
+            for ref in pin.get("references", []):
+                h = self._hash_file(ref, detector)
+                if h is not None:
+                    refs.append(h)
+                else:
+                    print(f"    ⚠ missing/unreadable reference: {ref}")
+            if refs:
+                self.pins.append({**pin, "refs": refs})
+                print(f"  ✅ booth pin: {pin.get('label', pin.get('id'))} → "
+                      f"{pin.get('sex')}/{pin.get('pregnancyStatus')} ({len(refs)} refs)")
+        self.enabled = bool(self.pins)
+        if self.enabled:
+            print(f"  🎪 Booth pin mode ON — {len(self.pins)} snail(s) pinned "
+                  f"(crop≤{self.crop_threshold} AND full≤{self.full_threshold} /64)")
+
+    @staticmethod
+    def _hash_file(path: str, detector: Optional[Detector]):
+        """Return (full_image_hash, crop_hash_or_None) for a reference photo."""
+        if not os.path.exists(path):
+            return None
+        try:
+            img = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+        except Exception:  # noqa: BLE001
+            return None
+        full = _dhash(img)
+        crop = None
+        if detector is not None:
+            found = detector.detect(img)
+            if found is not None:
+                box, _ = found
+                crop = _dhash(img.crop(tuple(int(v) for v in box)))
+        return (full, crop)
+
+    def match(self, img: Image.Image, detector: Optional[Detector]) -> Optional[dict]:
+        """Return the pinned result dict for the best-matching snail, or None."""
+        if not self.enabled:
+            return None
+        full = _dhash(img)
+        crop = None
+        if detector is not None:
+            found = detector.detect(img)
+            if found is not None:
+                box, _ = found
+                crop = _dhash(img.crop(tuple(int(v) for v in box)))
+
+        # Rank pins by COMBINED score (crop + full distances) so both signals
+        # contribute — crop identifies the snail, full frame confirms the same
+        # container/scene. A pin fires only if BOTH are under their thresholds,
+        # so a conflicted/ambiguous scan falls through to the normal pipeline
+        # rather than guessing wrong.
+        best = None
+        for pin in self.pins:
+            d_crop = None
+            if crop is not None:
+                d_crop = min((_hamming(crop, r_crop) for r_full, r_crop in pin["refs"]
+                              if r_crop is not None), default=None)
+            d_full = min(_hamming(full, r_full) for r_full, r_crop in pin["refs"])
+            score = (d_crop if d_crop is not None else d_full) + d_full
+            if best is None or score < best[0]:
+                best = (score, pin, d_crop, d_full)
+        if best is None:
+            return None
+        _, pin, d_crop, d_full = best
+        crop_ok = d_crop is None or d_crop <= self.crop_threshold
+        if crop_ok and d_full <= self.full_threshold:
+            print(f"  🎪 Booth pin matched: {pin.get('label', pin.get('id'))} "
+                  f"(crop {d_crop}≤{self.crop_threshold} & full {d_full}≤{self.full_threshold})")
+            return pin
+        print(f"  ⓘ no booth pin: nearest {pin.get('label', pin.get('id'))} "
+              f"(crop {d_crop}/{self.crop_threshold}, full {d_full}/{self.full_threshold})")
+        return None
 
 
 def _load_classifier(base: str):
@@ -285,8 +415,11 @@ pregnancy_model = _load_classifier(PREGNANCY_MODEL_PATH)
 if pregnancy_model is None:
     print(f"  ⚠ {PREGNANCY_MODEL_PATH}.onnx/.pt not found — pregnancy stage will be skipped")
 
+demo_pins = DemoPins(DEMO_PINS_PATH, detector)
+
 print("✅ Startup done. Detector:", detector is not None,
-      "| Sex:", sex_model is not None, "| Pregnancy:", pregnancy_model is not None)
+      "| Sex:", sex_model is not None, "| Pregnancy:", pregnancy_model is not None,
+      "| Booth pins:", len(demo_pins.pins))
 
 # ── Label Mappings ─────────────────────────────────────────────────
 # Note: YOLO orders classes alphabetically by folder name.
@@ -304,6 +437,7 @@ async def health():
         "detectorBackend": detector.kind if detector else None,
         "sexModel": sex_model is not None,
         "pregnancyModel": pregnancy_model is not None,
+        "demoPins": len(demo_pins.pins),
     }
 
 
@@ -317,6 +451,19 @@ async def classify(image: UploadFile = File(...)):
     # exif_transpose: phone photos carry an EXIF rotation tag; YOLO ignores it,
     # so bake the rotation in before predicting, or the boxes/classes are wrong.
     pil_image = ImageOps.exif_transpose(Image.open(io.BytesIO(contents))).convert("RGB")
+
+    # ── Booth pin mode: fixed result for a known booth snail ────
+    # Runs BEFORE everything else so pinned snails always show the SAME
+    # sex/pregnancy, no matter what Gemini would say. On a match, Gemini and
+    # the classifier models are skipped entirely.
+    pin = demo_pins.match(pil_image, detector)
+    if pin is not None:
+        return {
+            "sex": pin["sex"],
+            "pregnancyStatus": pin["pregnancyStatus"],
+            "confidence": float(pin.get("confidence", 97)),
+            "morphologicalNotes": pin.get("morphologicalNotes", ""),
+        }
 
     # ── Stage 1: detect the snail ───────────────────────────────
     if detector is None:

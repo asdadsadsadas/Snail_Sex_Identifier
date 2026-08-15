@@ -25,7 +25,7 @@ A full-stack React + TypeScript + Vite web app for AI-powered snail sex and preg
 
 ### Backend (Express + Gemini)
 
-- **`src/server.ts`** — Express server with **Gemini 2.0 Flash Vision** for real-time snail classification
+- **`src/server.ts`** — Express server with **Gemini Vision (`gemini-flash-latest`)** for real-time snail classification
 - **`POST /classify`** — Accepts image upload, sends to Gemini, returns structured sex/pregnancy/confidence/morphological notes
 - **Structured Output** — Uses Gemini's `responseSchema` for guaranteed JSON shape
 - **Fallback** — App falls back to mock classification if server is unreachable
@@ -60,16 +60,28 @@ Screens showcased: Onboarding · Home Dashboard · Scan (Live Camera, Welcome, R
 |---|---|
 | **`AI_TRAINING_GUIDE.md`** | Full end-to-end guide: Label Studio → YOLO in Colab → FastAPI → connect to app. Updated for the **3-stage pipeline**: a snail **detector** first, then sex + pregnancy classifiers on the detected crop |
 | **`PHOTO_SESSION_GUIDE.md`** | Photo-taking plan for building the dataset: photos per snail (35–40), angles, lighting, sex verification via tentacles, snail-based train/val split, small-dataset Colab settings |
-| **`scripts/organize_pregnancy_dataset.mjs`** | Maps Label Studio box labels → photos, 80/20 split, builds `dataset_detection/` (YOLO detection + `data.yaml`) and populates `dataset_pregnancy/train|val/pregnant/` |
-| **`scripts/exif_fix_dataset.py`** | Bakes EXIF orientation into phone photos (Label Studio shows them rotated; YOLO/OpenCV ignores the tag → labels were misaligned) + optional 1280px resize; `--check` draws box previews |
+| **`scripts/organize_pregnancy_dataset.mjs`** | Re-runnable organizer: matches **any Label Studio YOLO export** to its photos, 80/20 split (seed 42), builds `dataset_detection/` (class 0 = snail) + routes class names into `dataset_pregnancy/` (preg/not_preg) and `dataset_sex/` (male/female) |
+| **`scripts/exif_fix_dataset.py`** | Bakes EXIF orientation into phone photos (Label Studio shows them rotated; YOLO/OpenCV ignores the tag → labels were misaligned) + optional 1280px resize; `--check` draws box previews; **`--src-dir/--out-dir` mode** preps raw photo batches for Label Studio **before** labeling |
 | **`scripts/build_colab_notebook.py`** | Regenerates `colab/train_snail_pipeline.ipynb` from the `.py` source |
 | **`colab/train_snail_pipeline.py` + `.ipynb`** | Ready-to-run Colab: trains detector → sex classifier → pregnancy classifier, exports `.pt` + `.onnx` to Drive, diagnostic cell (mAP, detection rate, annotated preview) |
-| **`dataset_detection/`** | 🟡 **76 labeled pregnant-snail images (61 train / 15 val)**, class `snail` — EXIF-fixed, resized to 1280px. **Round-1 detector trained but not reliable — needs more photos** |
-| **`dataset_pregnancy/`** | 🟡 76 pregnant images organized (train/val/pregnant); `not_pregnant` still empty — needs collecting |
-| **`dataset_sex/`** | ⬜ Empty — needs male/female photo collection (see PHOTO_SESSION_GUIDE) |
+| **`all_snail/`** | 🟢 **724 raw snail photos** (1.7 GB iPhone MPO) — the round-2 photo source, labeled in Label Studio |
+| **`labels_snail/`** | 🟢 **Label Studio YOLO export** for all 724 photos (single class `Snail`, one box per snail) + `labels_snail.zip` archive |
+| **`dataset_detection/`** | 🟢 **724 labeled images (579 train / 145 val)**, class `snail`, EXIF-baked + resized to 1280px (previews in `scripts/box_previews/`) |
+| **Trained detector** | ✅ **`snail_detector.pt` + `snail_detector.onnx`** trained in Colab from the round-2 dataset (yolo11n, tuned hyperparameters), copied into `snail-api-server/` and **committed to git** (~5 MB `.pt` + ~10 MB `.onnx`). Results below |
+| **`dataset_pregnancy/` + `dataset_sex/`** | ⬜ Not built yet — sex/pregnancy labels to be collected in a later labeling pass |
+| **`snail-api-server/`** | 🟢 **FastAPI 3-stage prediction server** (`api_server.py`, `requirements.txt`, `README.md`) — detect → crop → sex → pregnancy. **Detector runs on ONNX Runtime** (~50–80 MB RAM, ~10× lighter than torch — required for Render's 512 MB free tier). **Gemini Vision fallback**: when the sex/pregnancy classifiers aren't deployed, the crop is classified by Gemini (`gemini-flash-latest`) instead of returning Unknown. **🎪 Booth pin mode**: optional `demo_pins.json` pins specific snails to fixed results via reference-photo matching (see below). Degrades gracefully at every stage |
+| **`scripts/build_demo_pins.py` + `check_demo_pins.py`** (in `snail-api-server/`) | 🎪 **Booth pin mode tooling** — `build_demo_pins.py` turns reference-photo folders (`demo_pins/snail1|2|3/`) + fixed results into `demo_pins.json`; `check_demo_pins.py` verifies each snail matches reliably **before the fair** (`MATCH ✅` / `NO MATCH ❌`) |
 | **`src/components/PullToRefresh.tsx`** | Touch gesture component for pull-to-refresh data reloading |
 
-> 📊 **Training status (round 1):** the 3-stage pipeline (detect → sex → pregnancy) is built and the tooling is ready. A first detector was trained on the 76 labeled images after fixing a critical **EXIF-orientation bug** (62/77 photos were stored rotated; Label Studio showed them correctly but YOLO read raw pixels, so labels were misaligned). The re-trained detector **still couldn't reliably find snails** — 76 images is too few for detection to generalize. **Next: take more photos** (more snails, angles, backgrounds), re-label, re-run the organize + EXIF-fix scripts, and re-train. Sex and `not_pregnant` data still to collect.
+> 📊 **Training status (round 2):** round-1 datasets (76 photos) were **scrapped**. The full 724-photo batch (`all_snail/`) was labeled in Label Studio with one snail box each (`labels_snail/` export) and organized into a fresh **detection dataset** (724 images, 579 train / 145 val, class `snail`, EXIF-baked + 1280px). **✅ Detector trained in Colab — verified working**: 100% detection rate on all 145 val images (conf 0.25/0.10/0.05), **mean val IoU 0.747** (boxes hug the snails — the round-1 EXIF misalignment is gone).
+>
+> **✅ Deployed & live:** the FastAPI server (`snail-api-server/`) is deployed as a **separate Render service** (`snail-api`, `https://snail-api.onrender.com`, via `render.yaml` blueprint). Two bugs were found and fixed along the way: (1) **torch OOM on Render's 512 MB free tier** — first `/classify` crashed the instance → 502; fixed by switching the detector to **ONNX Runtime** (identical weights, ~10× lighter, verified 20/20 val detections + 0.817 mean IoU vs the `.pt` model); (2) **detector silently not loading** — `render.yaml` set `DETECTOR_PATH=snail_detector.pt` while the code treated it as a base name (searching `snail_detector.pt.onnx`); fixed by stripping trailing extensions + dropping the env var. **Gemini Vision fallback active**: with `GEMINI_API_KEY` set, sex/pregnancy come from Gemini (`gemini-flash-latest` — the 2.0 models are retired) on the detected crop, so the app returns **real classifications today** instead of Unknown. The frontend (`https://snail-sex-identifier.onrender.com`) points at the API via `VITE_YOLO_API_URL`.
+>
+> **🎪 Science-fair demo runs locally** (no free-tier sleep/restarts): FastAPI on `:8000` + `npm run dev` on `:3000` (HTTPS). A **Vite proxy** (`/classify`, `/health` → `localhost:8000`) lets phones use the API same-origin — no mixed-content blocking. `.env` has `VITE_YOLO_API_URL=https://192.168.1.5:3000` + the Gemini key. Verified: real detections with Female/Male classifications in ~3–27s.
+>
+> **🎪 Booth pin mode (deterministic results per snail):** Gemini gives a slightly different answer on every scan, so the same snail could flip between Female/Male. For the booth, the 3 display snails are **pinned to fixed results**: drop 4–8 phone reference photos of each into `demo_pins/snail1|2|3/`, set each snail's fixed sex/pregnancy in `build_demo_pins.py`'s `SNAILS` list, run `python build_demo_pins.py`, then verify with `python check_demo_pins.py <photo>`. The server matches every scan with a **difference hash on both the detected crop AND the full frame** (dual thresholds crop≤10 / full≤20 of 64 — the crop identifies the snail, the full frame confirms the same container/scene, so similar snails don't get confused). On a match it returns the pinned result in ~0.05s, **bypassing Gemini entirely** — same snail, same result, every time. Verified: all 3 pinned snails return their fixed results instantly, a rotated/brightened 'fresh scan' still matches correctly, and unpinned photos fall through to the normal pipeline safely. `GET /health` reports `demoPins`; config + reference photos are gitignored (local-only).
+>
+> **Next: second Label Studio pass** for sex (male/female) and pregnancy (preg/not_preg) on the same 724 photos → train the stage-2/3 classifiers → drop `snail_sex_model.onnx` / `snail_pregnancy_model.onnx` into `snail-api-server/` (the server upgrades automatically, Gemini fallback retired).
 
 ### Source Control
 
@@ -80,21 +92,28 @@ Screens showcased: Onboarding · Home Dashboard · Scan (Live Camera, Welcome, R
 
 ## 🚀 How to Run Locally
 
+### YOLO + Gemini stack (science-fair demo — recommended)
+
 ```bash
-# Frontend (port 3000)
+# Terminal 1 — FastAPI YOLO server (port 8000)
+cd snail-api-server && GEMINI_API_KEY="<your key>" ../.venv/Scripts/python.exe -m uvicorn api_server:app --reload --port 8000
+
+# Terminal 2 — the app (port 3000, HTTPS via self-signed SSL for camera)
 npm run dev
-
-# Backend server with Gemini AI (port 3001)
-npm run dev:server
-
-# Both at once (separate terminals)
-npm run dev           # Terminal 1
-npm run dev:server    # Terminal 2
 ```
+
+The app calls the API through Vite's dev proxy (`/classify` → `localhost:8000`) so phones aren't blocked by mixed content. `.env` should contain `VITE_YOLO_API_URL=https://<your-LAN-IP>:3000` (or `https://localhost:3000` for desktop) and `GEMINI_API_KEY`.
 
 On your phone (same Wi-Fi):
 ```
-http://192.168.1.12:3000
+https://192.168.1.5:3000   (accept the self-signed cert warning once)
+```
+
+### Legacy Express + Gemini backend (port 3001)
+
+```bash
+npm run dev           # Terminal 1
+npm run dev:server    # Terminal 2
 ```
 
 ### Setup Gemini (optional — mock works without it)
@@ -114,18 +133,28 @@ localStorage.removeItem('snail_sexing_onboarding_done')
 
 ## 🌐 Render Deployment (Live ✅)
 
-The app is deployed as a unified server (frontend + API) on Render:
+The app runs as **two services** on Render's free tier, both auto-deploying from `master`:
+
+### 1. Frontend — `snail-sex-identifier`
 
 - **URL**: `https://snail-sex-identifier.onrender.com`
 - **Build**: `npm run build` (builds React frontend)
 - **Start**: `NODE_ENV=production npx tsx src/server.ts` (serves frontend + API)
 - **Config**: `railway.json` (legacy — Render configured via dashboard)
+- **Env**: `VITE_YOLO_API_URL=https://snail-api.onrender.com` (baked into the bundle → app calls the YOLO API, not Gemini)
+
+### 2. YOLO API — `snail-api`
+
+- **URL**: `https://snail-api.onrender.com` (`/health`, `/classify`)
+- **Config**: `render.yaml` blueprint at repo root (Root Directory: `snail-api-server`, start: `uvicorn api_server:app --host 0.0.0.0 --port $PORT`)
+- **Weights**: `snail_detector.pt` + `.onnx` committed to git (un-ignored in `snail-api-server/.gitignore`)
+- **Detector**: ONNX Runtime (~50–80 MB RAM — fits the 512 MB free tier)
+- **Env**: `GEMINI_API_KEY` set in Render's Environment tab (not in git) → Gemini Vision fallback for sex/pregnancy
 
 ### To redeploy:
 
-1. Push to GitHub → Render auto-deploys from `master` branch
-2. Add `GEMINI_API_KEY` in Render dashboard → Environment tab (optional)
-3. Render auto-builds and deploys ✅
+1. Push to GitHub → both services auto-deploy from `master`
+2. **Known free-tier quirks**: the API spins down after ~15 min idle (first request takes ~30–60s to wake) and Render may restart free instances at any time — occasional 502s on `/classify` are infra flakiness, not app bugs (the code fails soft to `Unknown`). **For an all-day demo, run locally instead** (see below).
 
 ---
 
@@ -195,15 +224,18 @@ snail-api-server/       ← FastAPI server files go here
 | `src/vite-env.d.ts` | Vite type declarations |
 | `showcase.png` | Full-page showcase screenshot with all app screens |
 | `showcase/index.html` | Standalone HTML showcase page (responsive grid, phone mockups) |
-| `dataset_sex/` | Dataset folders for YOLO sex training (empty — photos to collect) |
-| `dataset_pregnancy/` | YOLO pregnancy training folders (76 pregnant images organized) + `Female_preg_labels/` Label Studio export |
-| `dataset_detection/` | YOLO detection dataset (76 snail boxes: images + labels + `data.yaml`) |
-| `scripts/organize_pregnancy_dataset.mjs` | Re-runnable dataset organizer (Label Studio export → detection + classification layouts) |
-| `scripts/exif_fix_dataset.py` | Bakes EXIF orientation + optional resize (required before training phone photos) |
+| `all_snail/` | 724 raw snail photos (source — keep as originals) |
+| `labels_snail/` + `labels_snail.zip` | Label Studio YOLO export (724 labels, class `Snail`) |
+| `dataset_detection/` | 🟢 YOLO detection dataset (724 images: 579 train / 145 val, class `snail`, EXIF-baked, 1280px) |
+| `dataset_pregnancy/` + `dataset_sex/` | Not built yet — will be generated in a later labeling pass |
+| **`scripts/organize_pregnancy_dataset.mjs`** | Re-runnable dataset organizer (matches any Label Studio YOLO export → detection + classification layouts) |
+| **`scripts/exif_fix_dataset.py`** | Bakes EXIF orientation + optional resize (required before training phone photos); `--src-dir/--out-dir` preps new batches for Label Studio |
 | `scripts/build_colab_notebook.py` | Regenerates the Colab notebook from `colab/train_snail_pipeline.py` |
 | `colab/train_snail_pipeline.py` | Google Colab training script for the full 3-stage pipeline |
 | `colab/train_snail_pipeline.ipynb` | Same pipeline as a ready-to-open Colab notebook (File → Upload notebook) |
-| `snail-api-server/` | Placeholder for custom YOLO FastAPI server |
+| `snail-api-server/` | 🟢 **FastAPI 3-stage server** — `api_server.py` (detect via **ONNX Runtime** → crop → sex/pregnancy via trained models, **Gemini Vision fallback**, or **booth pins**; graceful degradation), `requirements.txt`, `README.md`, `.gitignore` (commits `.pt`/`.onnx` weights) |
+| `snail-api-server/build_demo_pins.py` + `check_demo_pins.py` | 🎪 Booth pin mode: generate `demo_pins.json` from reference photos + verify matching before the fair (`demo_pins.json` + `demo_pins/` photos are gitignored) |
+| `render.yaml` | Render blueprint — defines the `snail-api` service (root dir `snail-api-server`, uvicorn start command, `/health` check) |
 
 ---
 
@@ -217,7 +249,7 @@ snail-api-server/       ← FastAPI server files go here
 | **Animations** | Motion (former Framer Motion) |
 | **Charts** | Recharts |
 | **Database** | Firebase Firestore |
-| **AI (option 1)** | Gemini 2.0 Flash Vision via Express server |
-| **AI (option 2)** | Custom YOLO model via FastAPI (train your own!) |
-| **Deployment** | Render (unified server: frontend + API, free tier) |
+| **AI (option 1)** | Gemini Vision (`gemini-flash-latest`) via Express server **or** as the FastAPI fallback |
+| **AI (option 2)** | Custom YOLO model via FastAPI (train your own!) — detector runs on **ONNX Runtime** |
+| **Deployment** | Render (free tier) — `snail-sex-identifier` frontend + `snail-api` FastAPI service (`render.yaml`) |
 | **SSL** | @vitejs/plugin-basic-ssl for HTTPS on mobile |

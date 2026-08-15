@@ -13,3 +13,8 @@ __pycache__/
 .venv/
 venv/
 .env
+
+# Booth pin mode — reference photos + generated config stay local (the
+# pinned results are for the science-fair booth, not the repo)
+demo_pins.json
+demo_pins/
