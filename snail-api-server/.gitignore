@@ -1,0 +1,14 @@
+# Model weights — snail_detector.pt is small (~5 MB) so it's committed to the
+# repo for zero-friction deploys (Render/Railway pick it up with the code).
+# Keep the rest out: .onnx is redundant (server loads .pt by default) and
+# last.pt is the final-epoch checkpoint (best.pt is what we serve).
+*.pt
+*.onnx
+!snail_detector.pt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env

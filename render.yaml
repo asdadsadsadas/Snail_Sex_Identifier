@@ -1,0 +1,21 @@
+# Render Blueprint — Snail AI prediction API (FastAPI)
+#
+# Deploy: push this repo to GitHub, then in Render click
+#   New → Blueprint → select the repo (or just connect the repo to a
+#   Web Service and set Root Directory to "snail-api-server").
+#
+# The model weights are committed (snail_detector.pt, ~5 MB), so no extra
+# setup is needed. Sex/pregnancy classifiers load automatically once their
+# files exist (or set SEX_MODEL_URL / PREGNANCY_MODEL_URL to download them).
+services:
+  - type: web
+    name: snail-api
+    runtime: python
+    rootDir: snail-api-server
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api_server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    plan: free
+    envVars:
+      - key: DETECTOR_PATH
+        value: snail_detector.pt
