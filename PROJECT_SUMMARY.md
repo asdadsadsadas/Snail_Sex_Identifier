@@ -60,6 +60,7 @@ Screens showcased: Onboarding · Home Dashboard · Scan (Live Camera, Welcome, R
 |---|---|
 | **`AI_TRAINING_GUIDE.md`** | Full end-to-end guide: Label Studio → YOLO in Colab → FastAPI → connect to app. Updated for the **3-stage pipeline**: a snail **detector** first, then sex + pregnancy classifiers on the detected crop |
 | **`PHOTO_SESSION_GUIDE.md`** | Photo-taking plan for building the dataset: photos per snail (35–40), angles, lighting, sex verification via tentacles, snail-based train/val split, small-dataset Colab settings |
+| **`BOOTH_PIN_GUIDE.md`** | 🎪 Step-by-step setup for **booth pin mode** at the science fair: reference photos → folders → `build_demo_pins.py` → `check_demo_pins.py` → restart, plus fair-day verification and troubleshooting |
 | **`scripts/organize_pregnancy_dataset.mjs`** | Re-runnable organizer: matches **any Label Studio YOLO export** to its photos, 80/20 split (seed 42), builds `dataset_detection/` (class 0 = snail) + routes class names into `dataset_pregnancy/` (preg/not_preg) and `dataset_sex/` (male/female) |
 | **`scripts/exif_fix_dataset.py`** | Bakes EXIF orientation into phone photos (Label Studio shows them rotated; YOLO/OpenCV ignores the tag → labels were misaligned) + optional 1280px resize; `--check` draws box previews; **`--src-dir/--out-dir` mode** preps raw photo batches for Label Studio **before** labeling |
 | **`scripts/build_colab_notebook.py`** | Regenerates `colab/train_snail_pipeline.ipynb` from the `.py` source |
