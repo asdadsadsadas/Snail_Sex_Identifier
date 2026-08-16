@@ -1,6 +1,6 @@
 # Snail Sexing AI — Project Summary
 
-A full-stack React + TypeScript + Vite web app for AI-powered snail sex and pregnancy classification, backed by Firebase Firestore.
+A full-stack React + TypeScript + Vite web app for AI-powered snail sex and pregnancy classification, backed by Firebase Firestore — **plus a Flutter Android APK version** with live-camera scanning and on-device records (see 📱 below).
 
 ---
 
@@ -39,6 +39,20 @@ A full-stack React + TypeScript + Vite web app for AI-powered snail sex and preg
 | **`showcase/index.html`** | Standalone HTML showcase page — open in browser to see all screens in a responsive grid |
 
 Screens showcased: Onboarding · Home Dashboard · Scan (Live Camera, Welcome, Result) · History · Detail View · Statistics
+
+### 📱 Android APK (Flutter)
+
+| Resource | Details |
+|---|---|
+| **`snail_apk/`** | 🟢 Complete **Flutter port of the app** — live-camera scanning (custom viewfinder + torch toggle), gallery upload, on-device records, all 6 screens (Onboarding · Home · Scan · History · Detail · Stats). Package `com.snailsexing.snail_sexing_app`, custom snail-shell launcher icon, CAMERA + INTERNET permissions only. Build: `flutter build apk --release` → `snail_apk/build/app/outputs/flutter-apk/app-release.apk` (or `--split-per-abi` for smaller per-arch APKs) |
+| **`snail-sexing-app.apk`** | Built release APK (~57 MB) copied to the repo root for convenience — **not committed** (see `*.apk` in `.gitignore`; rebuild from source instead) |
+| **Classification API** | Same contract as the web app — multipart POST `/classify` to `https://snail-api.onrender.com` by default. `--dart-define=API_URL=http://<LAN-IP>:8000` for the local FastAPI server; `--dart-define=CYCLE_MODE=true` for the rotating booth demo (no server needed). Booth pins work automatically when the server has `demo_pins.json` |
+| **Storage** | **On-device** — records saved as a JSON list in shared_preferences (photo compressed to ~480px JPEG base64, mirroring the web app's `compressImage`). No Firebase needed, works offline |
+| **Fallback** | Server unreachable → mock classification (same behavior as the web app); "No Snail Detected" shown when the server reports no snail |
+| **Tests** | `flutter test` — 3 widget smoke tests (onboarding gate, home render, tab navigation) all pass |
+| **`snail_apk/README.md`** | Build + `--dart-define` config reference |
+
+---
 
 ### Key Improvements
 
@@ -253,6 +267,7 @@ snail-api-server/       ← FastAPI server files go here
 | `snail-api-server/` | 🟢 **FastAPI 3-stage server** — `api_server.py` (detect via **ONNX Runtime** → crop → sex/pregnancy via trained models, **Gemini Vision fallback**, or **booth pins**; graceful degradation), `requirements.txt`, `README.md`, `.gitignore` (commits `.pt`/`.onnx` weights) |
 | `snail-api-server/build_demo_pins.py` + `check_demo_pins.py` | 🎪 Booth pin mode: generate `demo_pins.json` from reference photos + verify matching before the fair (`demo_pins.json` + `demo_pins/` photos are gitignored) |
 | `render.yaml` | Render blueprint — defines the `snail-api` service (root dir `snail-api-server`, uvicorn start command, `/health` check) |
+| `snail_apk/` | 🟢 **Flutter Android app** — the APK version (see the 📱 section above). `flutter analyze` clean, `flutter test` green |
 
 ---
 
@@ -270,3 +285,4 @@ snail-api-server/       ← FastAPI server files go here
 | **AI (option 2)** | Custom YOLO model via FastAPI (train your own!) — detector runs on **ONNX Runtime** |
 | **Deployment** | Render (free tier) — `snail-sex-identifier` frontend + `snail-api` FastAPI service (`render.yaml`) |
 | **SSL** | @vitejs/plugin-basic-ssl for HTTPS on mobile |
+| **Mobile** | Flutter 3.47 (Dart) — Android APK: `camera`, `image_picker`, `shared_preferences`, `http`, `fl_chart`, `intl`, `image` |

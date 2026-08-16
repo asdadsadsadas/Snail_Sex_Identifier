@@ -6,11 +6,15 @@ dist/
 *.log
 coverage/
 
+# Built Android APK copy (rebuild from snail_apk/ with `flutter build apk`)
+*.apk
+
 # Dataset artifacts (regenerable or too large for git)
 *.zip
 dataset_sex/drive-download-*/
 scripts/box_previews/
 dataset_labeling/
-all_snail/          # 1.7GB raw phone photos — local source only (keep as originals)
+# 1.7GB raw phone photos — local source only (keep as originals)
+all_snail/
 scripts/__pycache__/
 __pycache__/
