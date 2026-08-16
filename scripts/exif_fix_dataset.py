@@ -28,6 +28,11 @@ Usage:
                                                        #   normalized, so labels stay correct.
     python scripts/exif_fix_dataset.py --check 5       # also save 5 box-overlay previews
                                                        #   into scripts/box_previews/ for eyeballing
+
+    # Prepare a NEW photo batch for Label Studio (bake EXIF + resize, copy into
+    # out-dir with the same filenames). Do this BEFORE labeling so the boxes you
+    # draw in Label Studio match the pixels YOLO will read — no rotation bug.
+    python scripts/exif_fix_dataset.py --src-dir all_snail/raw --out-dir dataset_labeling --max-size 1280
 """
 
 import argparse
@@ -53,8 +58,16 @@ JPEG_QUALITY = 92
 
 
 def fix_image(path: Path, max_size: int = 0) -> tuple[str, bool]:
-    """Returns (outcome, changed). Rewrites the image with EXIF baked in."""
-    img = Image.open(path)
+    """Returns (outcome, changed). Rewrites the image in place with EXIF baked in."""
+    outcome, wrote = fix_image_to(path, path, max_size)
+    return outcome, wrote
+
+
+def fix_image_to(src: Path, dst: Path, max_size: int = 0) -> tuple[str, bool]:
+    """Open src, bake EXIF orientation, optionally resize, and write a plain JPEG to dst.
+    Returns (outcome, wrote_file). Files already correct are copied unchanged
+    (no re-encode) so the destination always holds every image."""
+    img = Image.open(src)
     # iPhone cameras often save as MPO (Multi Picture Object — a JPEG wrapper
     # for Live Photos). PIL reads its first frame; treat it as JPEG here.
     if img.format not in ("JPEG", "MPO"):
@@ -78,11 +91,16 @@ def fix_image(path: Path, max_size: int = 0) -> tuple[str, bool]:
     convert_mpo = img.format == "MPO"
 
     if not rotated and not resized and not convert_mpo:
+        # Already correct — just make sure it exists in the destination.
+        if src.resolve() != dst.resolve() and not dst.exists():
+            import shutil
+            shutil.copy2(src, dst)
         return f"OK (already normal, orientation={orientation})", False
 
     # Re-encode as a plain JPEG WITHOUT the EXIF orientation tag, so nothing
     # rotates it again — also converts MPO into a plain JPEG for OpenCV.
-    transposed.save(path, "JPEG", quality=JPEG_QUALITY)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    transposed.save(dst, "JPEG", quality=JPEG_QUALITY)
     if rotated:
         reason = f"FIXED orientation {orientation}"
     elif resized:
@@ -118,7 +136,41 @@ def main() -> None:
                         help="save N box-overlay previews into scripts/box_previews/")
     parser.add_argument("--max-size", type=int, default=0, metavar="PX",
                         help="resize images so the longest side is at most PX (default: no resize)")
+    parser.add_argument("--src-dir", type=str, default="", metavar="DIR",
+                        help="copy+fix every image in DIR into --out-dir (labels not needed); "
+                             "use BEFORE labeling to prepare a photo batch for Label Studio")
+    parser.add_argument("--out-dir", type=str, default="", metavar="DIR",
+                        help="destination for --src-dir mode (default: <src-dir>_fixed)")
     args = parser.parse_args()
+
+    if args.src_dir:
+        src_dir = Path(args.src_dir)
+        out_dir = Path(args.out_dir or f"{src_dir}_fixed")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        src_images = sorted(
+            p for p in src_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in (".jpg", ".jpeg", ".mpo", ".png")
+        )
+        if not src_images:
+            print(f"[ERR] No images found in {src_dir}")
+            sys.exit(1)
+        changed = skipped = exists = 0
+        for p in src_images:
+            dst = out_dir / (p.stem + ".jpg")
+            if dst.exists():
+                exists += 1
+                continue  # already prepared — files never change
+            outcome, did_change = fix_image_to(p, dst, max_size=args.max_size)
+            if did_change:
+                changed += 1
+            else:
+                skipped += 1
+            print(f"  {outcome:55s} {p.name}")
+        print(f"[OK] {len(src_images)} images prepared into {out_dir} "
+              f"({changed} re-encoded, {skipped} copied as-is, {exists} already existed).")
+        print(f"     Next: drag {out_dir} into Label Studio and label. The boxes you draw")
+        print(f"     will match the pixels YOLO trains on — no orientation bug.")
+        return
 
     images = []
     for d in TARGET_DIRS:

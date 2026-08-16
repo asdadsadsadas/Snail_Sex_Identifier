@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env*
 !.env.example
+!.env.cycle
 *.log
 coverage/
 
@@ -9,3 +10,7 @@ coverage/
 *.zip
 dataset_sex/drive-download-*/
 scripts/box_previews/
+dataset_labeling/
+all_snail/          # 1.7GB raw phone photos — local source only (keep as originals)
+scripts/__pycache__/
+__pycache__/

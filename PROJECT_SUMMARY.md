@@ -61,7 +61,10 @@ Screens showcased: Onboarding · Home Dashboard · Scan (Live Camera, Welcome, R
 | **`AI_TRAINING_GUIDE.md`** | Full end-to-end guide: Label Studio → YOLO in Colab → FastAPI → connect to app. Updated for the **3-stage pipeline**: a snail **detector** first, then sex + pregnancy classifiers on the detected crop |
 | **`PHOTO_SESSION_GUIDE.md`** | Photo-taking plan for building the dataset: photos per snail (35–40), angles, lighting, sex verification via tentacles, snail-based train/val split, small-dataset Colab settings |
 | **`BOOTH_PIN_GUIDE.md`** | 🎪 Step-by-step setup for **booth pin mode** at the science fair: reference photos → folders → `build_demo_pins.py` → `check_demo_pins.py` → restart, plus fair-day verification and troubleshooting |
+| **`CYCLE_MODE_GUIDE.md`** | 🌀 How to run and customize the **cycle demo version** (`npm run dev:cycle`): the Male → Female → Female Pregnant rotating result loop, no server needed |
 | **`scripts/organize_pregnancy_dataset.mjs`** | Re-runnable organizer: matches **any Label Studio YOLO export** to its photos, 80/20 split (seed 42), builds `dataset_detection/` (class 0 = snail) + routes class names into `dataset_pregnancy/` (preg/not_preg) and `dataset_sex/` (male/female) |
+| **`scripts/crop_snail_boxes.py`** | ✂️ Second-pass prep: crops every labeled snail out of `dataset_detection/` (largest box + 10% margin) into `dataset_labeling/train|val/` — classifier training inputs are the **detected crops**, and the detector's split carries over so classifier val = detector val. **✅ Ran: 724 crops (579 train / 145 val)** |
+| **`scripts/organize_classification_dataset.mjs`** | Second-pass organizer: converts the Label Studio **classification JSON export** (Male/Female, Pregnant/Not Pregnant) into `dataset_sex/` + `dataset_pregnancy/`, inheriting the train/val split from the crop folders, warns on missing classes |
 | **`scripts/exif_fix_dataset.py`** | Bakes EXIF orientation into phone photos (Label Studio shows them rotated; YOLO/OpenCV ignores the tag → labels were misaligned) + optional 1280px resize; `--check` draws box previews; **`--src-dir/--out-dir` mode** preps raw photo batches for Label Studio **before** labeling |
 | **`scripts/build_colab_notebook.py`** | Regenerates `colab/train_snail_pipeline.ipynb` from the `.py` source |
 | **`colab/train_snail_pipeline.py` + `.ipynb`** | Ready-to-run Colab: trains detector → sex classifier → pregnancy classifier, exports `.pt` + `.onnx` to Drive, diagnostic cell (mAP, detection rate, annotated preview) |
@@ -80,9 +83,11 @@ Screens showcased: Onboarding · Home Dashboard · Scan (Live Camera, Welcome, R
 >
 > **🎪 Science-fair demo runs locally** (no free-tier sleep/restarts): FastAPI on `:8000` + `npm run dev` on `:3000` (HTTPS). A **Vite proxy** (`/classify`, `/health` → `localhost:8000`) lets phones use the API same-origin — no mixed-content blocking. `.env` has `VITE_YOLO_API_URL=https://192.168.1.5:3000` + the Gemini key. Verified: real detections with Female/Male classifications in ~3–27s.
 >
-> **🎪 Booth pin mode (deterministic results per snail):** Gemini gives a slightly different answer on every scan, so the same snail could flip between Female/Male. For the booth, the 3 display snails are **pinned to fixed results**: drop 4–8 phone reference photos of each into `demo_pins/snail1|2|3/`, set each snail's fixed sex/pregnancy in `build_demo_pins.py`'s `SNAILS` list, run `python build_demo_pins.py`, then verify with `python check_demo_pins.py <photo>`. The server matches every scan with a **difference hash on both the detected crop AND the full frame** (dual thresholds crop≤10 / full≤20 of 64 — the crop identifies the snail, the full frame confirms the same container/scene, so similar snails don't get confused). On a match it returns the pinned result in ~0.05s, **bypassing Gemini entirely** — same snail, same result, every time. Verified: all 3 pinned snails return their fixed results instantly, a rotated/brightened 'fresh scan' still matches correctly, and unpinned photos fall through to the normal pipeline safely. `GET /health` reports `demoPins`; config + reference photos are gitignored (local-only).
+> **🎪 Cycle demo version (`npm run dev:cycle`):** the no-server booth demo — every scan shows the **next** result in the loop **Male → Female → Female Pregnant → back to Male**, regardless of what the camera sees (even empty photos advance the cycle). Deterministic, instant (~0.9s fake scan), works offline — perfect for a hands-on demo where visitors scan repeatedly. The loop is defined in `src/lib/api.ts` (`cycleStates`) and enabled via `VITE_CYCLE_MODE` (set in `.env.cycle`; `npm run dev:cycle` / `npm run build:cycle`). See **`CYCLE_MODE_GUIDE.md`** for the full how-to.
 >
-> **Next: second Label Studio pass** for sex (male/female) and pregnancy (preg/not_preg) on the same 724 photos → train the stage-2/3 classifiers → drop `snail_sex_model.onnx` / `snail_pregnancy_model.onnx` into `snail-api-server/` (the server upgrades automatically, Gemini fallback retired).
+> **🎪 Booth pin mode (deterministic results per snail):** Gemini gives a slightly different answer on every scan, so the same snail could flip between Female/Male. For the booth, the 3 display snails are **pinned to fixed results**: drop 4–8 phone reference photos of each into `demo_pins/snail1|2|3/`, set each snail's fixed sex/pregnancy in `build_demo_pins.py`'s `SNAILS` list, run `python build_demo_pins.py`, then verify with `python check_demo_pins.py <photo>`. **Flow per scan: detect the snail first — no snail in the photo returns "No Snail Detected" (never a pinned result); if a snail IS found, the scan is matched with a difference hash on both the detected crop AND the full frame** (dual thresholds crop≤10 / full≤20 of 64 — the crop identifies the snail, the full frame confirms the same container/scene, so similar snails don't get confused). On a match it returns the pinned result in ~0.05s, **bypassing Gemini entirely** — same snail, same result, every time. Verified: all 3 pinned snails return their fixed results instantly, a rotated/brightened 'fresh scan' still matches correctly, and unpinned photos fall through to the normal pipeline safely. `GET /health` reports `demoPins`; config + reference photos are gitignored (local-only).
+>
+> **Next: second Label Studio pass** — the snail crops are ready in `dataset_labeling/` (724 crops, 579 train / 145 val, generated by `scripts/crop_snail_boxes.py`). Drag that folder into Label Studio, label sex (Male/Female) + pregnancy (Pregnant/Not Pregnant), export JSON, run `scripts/organize_classification_dataset.mjs` → train the stage-2/3 classifiers in Colab → drop `snail_sex_model.onnx` / `snail_pregnancy_model.onnx` into `snail-api-server/` (the server upgrades automatically, Gemini fallback retired).
 
 ### Source Control
 
@@ -109,6 +114,14 @@ On your phone (same Wi-Fi):
 ```
 https://192.168.1.5:3000   (accept the self-signed cert warning once)
 ```
+
+### Cycle demo version (no server needed)
+
+```bash
+npm run dev:cycle      # same app, but every scan shows Male → Female → Female Pregnant in rotation
+```
+
+Works fully offline — the app never calls the API. `npm run build:cycle` produces a static `dist/` with the cycle baked in. (The local `.env`'s `VITE_CYCLE_MODE` flag controls whether plain `npm run dev` also cycles — set it to `false` to make the main version call the FastAPI server again.)
 
 ### Legacy Express + Gemini backend (port 3001)
 
@@ -220,7 +233,8 @@ snail-api-server/       ← FastAPI server files go here
 | `src/screens/StatsScreen.tsx` | Pie/bar charts from Firestore via Recharts |
 | `src/components/BottomNav.tsx` | Bottom tab navigation (Home, Scan, History, Stats) |
 | `src/lib/firebase.ts` | Firebase config + all CRUD operations |
-| `src/lib/api.ts` | Classification API service (server → Gemini → mock fallback) |
+| `src/lib/api.ts` | Classification API service (server → Gemini → mock fallback) + **cycle mode** (`VITE_CYCLE_MODE=true`): rotates scan results Male → Female → Female Pregnant without a server |
+| `.env.cycle` | Cycle-demo config (`VITE_CYCLE_MODE=true`) — run with `npm run dev:cycle` (dev) or `npm run build:cycle` (static build) |
 | `src/lib/utils.ts` | Utility functions (cn, formatDate, formatConfidence) |
 | `src/vite-env.d.ts` | Vite type declarations |
 | `showcase.png` | Full-page showcase screenshot with all app screens |
@@ -228,7 +242,8 @@ snail-api-server/       ← FastAPI server files go here
 | `all_snail/` | 724 raw snail photos (source — keep as originals) |
 | `labels_snail/` + `labels_snail.zip` | Label Studio YOLO export (724 labels, class `Snail`) |
 | `dataset_detection/` | 🟢 YOLO detection dataset (724 images: 579 train / 145 val, class `snail`, EXIF-baked, 1280px) |
-| `dataset_pregnancy/` + `dataset_sex/` | Not built yet — will be generated in a later labeling pass |
+| `dataset_labeling/` | 🟢 **724 snail crops** (579 train / 145 val) ready for the second Label Studio pass — generated by `scripts/crop_snail_boxes.py` from the detection boxes (gitignored, regenerable) |
+| `dataset_pregnancy/` + `dataset_sex/` | ⬜ Not built yet — built by `scripts/organize_classification_dataset.mjs` from the second-pass Label Studio export |
 | **`scripts/organize_pregnancy_dataset.mjs`** | Re-runnable dataset organizer (matches any Label Studio YOLO export → detection + classification layouts) |
 | **`scripts/exif_fix_dataset.py`** | Bakes EXIF orientation + optional resize (required before training phone photos); `--src-dir/--out-dir` preps new batches for Label Studio |
 | `scripts/build_colab_notebook.py` | Regenerates the Colab notebook from `colab/train_snail_pipeline.py` |

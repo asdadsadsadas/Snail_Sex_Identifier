@@ -24,7 +24,7 @@ Your final app runs a **3-stage pipeline**: first **detect** the snail, then cla
 
 The FastAPI server runs all three in sequence: **detect → crop → classify sex → classify pregnancy** and returns the combined result.
 
-> 📊 **Training status (round 1):** `dataset_detection/` has **76 labeled images** (61 train / 15 val) — EXIF-orientation fixed, resized to 1280px (see the ⚠️ note in Phase 2 — this bug silently rotated most labels). A first detector was trained, but **76 images is too few for reliable detection** — it failed to find snails on the val images. **Plan: take more photos** (different snails, angles, backgrounds — see `PHOTO_SESSION_GUIDE.md`), re-label, re-run `organize_pregnancy_dataset.mjs` + `exif_fix_dataset.py`, and re-train. The sex dataset and `not_pregnant` images still need collecting too.
+> 📊 **Training status (round 2):** the round-1 dataset (76 photos) was scrapped. The full **724-photo batch** (`all_snail/`) is labeled (`labels_snail/` export) and organized into a fresh `dataset_detection/` (724 images, 579 train / 145 val, class `snail`, EXIF-baked + 1280px). **✅ Detector trained and verified** (100% detection rate on val, mean IoU 0.747) — `snail_detector.pt`/`.onnx` are on Google Drive. **✅ FastAPI server built** (`snail-api-server/`, Phase 4 below — the code in this guide is what it's based on). **Next: download the weights into `snail-api-server/`, deploy, set `VITE_YOLO_API_URL`, then label the same photos for sex/pregnancy (a second Label Studio pass) to train the stage-2/3 classifiers.**
 
 ---
 
@@ -184,28 +184,42 @@ Repeat for the pregnancy dataset (output folder: `dataset_pregnancy`).
 
 ### Snail Detector Dataset (bounding boxes)
 
-The detector needs **bounding boxes**, not just class labels. If you labeled images in Label Studio with boxes (like the existing `Female_preg_labels` export), organize them with the included script:
+The detector needs **bounding boxes**, not just class labels. If you labeled images in Label Studio with boxes (like the `labels_snail` export), organize them with the included script:
 
 ```bash
+# Defaults: all_snail/ photos + labels_snail/ export (the round-2 724-photo set)
 node scripts/organize_pregnancy_dataset.mjs
+
+# Or point at any other photos + export:
+node scripts/organize_pregnancy_dataset.mjs \
+  --images path/to/photos \
+  --labels <label_studio_export>/labels \
+  --classes <label_studio_export>/classes.txt
 ```
 
-This maps each Label Studio box to its photo, splits 80/20, and builds:
+The script matches each Label Studio box to its photo by filename (any naming works — `snail (5).JPG` ↔ `0c3ab12d-snail_5.txt`), splits 80/20 with a fixed seed, and builds **all three datasets at once**: every box becomes class 0 `snail` for detection, and images whose box class is a pregnancy label (`preg`, `not_preg`) land in `dataset_pregnancy/`, while `male`/`female` labels land in `dataset_sex/`.
 
 ```
 dataset_detection/              # ← YOLO detection dataset (class 0 = snail)
-├── images/train/  (61 photos)
-├── images/val/    (15 photos)
+├── images/train/
+├── images/val/
 ├── labels/train/  (matching .txt boxes)
 ├── labels/val/
 └── data.yaml                   # ultralytics config
 ```
 
-### ⚠️ Fix phone-photo orientation before training (important!)
+### ⚠️ Fix phone-photo orientation (important! — best done BEFORE labeling)
 
 Phone photos often store pixels in landscape with an EXIF rotation tag (the camera was held portrait). Label Studio displays them **rotated correctly**, so your boxes are relative to the rotated image — but YOLO/OpenCV reads the **raw pixels** and ignores the tag. Result: boxes point at the wrong place and the model can't learn (symptom: training runs, but the detector finds nothing).
 
-Bake the rotation into the pixels (and resize to 1280px for a fast upload — boxes are normalized, so resizing is safe):
+**Best workflow — bake the rotation into a new photo batch BEFORE labeling** (so the boxes you draw in Label Studio match the training pixels exactly, and nothing needs fixing afterward):
+
+```bash
+python scripts/exif_fix_dataset.py --src-dir all_snail/raw_photos --out-dir dataset_labeling --max-size 1280
+# → drag dataset_labeling/ into Label Studio and label
+```
+
+If you labeled first (old workflow), fix the organized datasets in place and verify:
 
 ```bash
 python scripts/exif_fix_dataset.py --max-size 1280
@@ -238,6 +252,43 @@ dataset_detection/
 ├── labels/train|val/           # YOLO boxes (class 0 = snail)
 └── data.yaml
 ```
+
+### Second Label Studio pass — sex & pregnancy (classifiers) 🐌✂️
+
+The stage-2/3 classifiers run on the **detected snail crop** (the API crops the box before classifying), so they should be trained on **crops, not full photos**. Now that the detector dataset exists, generate one crop per labeled snail with the included script (it uses the round-2 boxes, largest box + 10% margin — same as the Colab pipeline):
+
+```bash
+python scripts/crop_snail_boxes.py
+# → dataset_labeling/train/ (579 crops) + dataset_labeling/val/ (145 crops)
+#   (the detector's train/val split carries over, so classifier val = detector val)
+```
+
+Then label the crops in Label Studio (image classification project — no boxes needed):
+
+```xml
+<View>
+  <Image name="image" value="$image"/>
+  <Choices name="sex" toName="image" showInline="true" required="false">
+    <Choice value="Male"/>
+    <Choice value="Female"/>
+  </Choices>
+  <Choices name="pregnancy" toName="image" showInline="true" required="false">
+    <Choice value="Pregnant"/>
+    <Choice value="Not Pregnant"/>
+  </Choices>
+</View>
+```
+
+Drag `dataset_labeling/` into the project, label each crop (sex for all; pregnancy optional for males), export as **JSON**, then organize with the second-pass script:
+
+```bash
+# Two exports (or one combined export with --export):
+node scripts/organize_classification_dataset.mjs \
+  --sex-export export_sex.json --preg-export export_preg.json
+# → dataset_sex/ (train|val / male|female) + dataset_pregnancy/ (train|val / pregnant|not_pregnant)
+```
+
+The script routes each crop by its label value (Male/Female/Pregnant/Not Pregnant — any case), keeps the train/val split from the folder the crop came from, and warns if a class is missing (e.g. no `not_pregnant` photos yet).
 
 ---
 
@@ -360,11 +411,14 @@ print("✅ Pregnancy model trained!")
 
 ### Step 7: Download Trained Weights
 
+> The recommended path is to run `colab/train_snail_pipeline.ipynb` — its `save_to_drive()` helper copies each model into **`My Drive/snail_models/`** and **verifies the file actually landed** (it raises a loud error instead of printing "saved" when the copy silently fails, e.g. Drive not mounted). Manual version below for reference:
+
 ```python
 # Copy to Drive for persistence
-!cp /content/snail_detector/det/weights/best.pt       "/content/drive/MyDrive/snail_detector.pt"
-!cp /content/snail_sex/sex_model/weights/best.pt      "/content/drive/MyDrive/snail_sex_model.pt"
-!cp /content/snail_pregnancy/pregnancy_model/weights/best.pt "/content/drive/MyDrive/snail_pregnancy_model.pt"
+!mkdir -p "/content/drive/MyDrive/snail_models"
+!cp /content/snail_detector/det/weights/best.pt       "/content/drive/MyDrive/snail_models/snail_detector.pt"
+!cp /content/snail_sex/sex_model/weights/best.pt      "/content/drive/MyDrive/snail_models/snail_sex_model.pt"
+!cp /content/snail_pregnancy/pregnancy_model/weights/best.pt "/content/drive/MyDrive/snail_models/snail_pregnancy_model.pt"
 
 # Also export to ONNX for faster inference
 from ultralytics import YOLO
@@ -373,11 +427,19 @@ YOLO("/content/snail_detector/det/weights/best.pt").export(format="onnx")
 YOLO("/content/snail_sex/sex_model/weights/best.pt").export(format="onnx")
 YOLO("/content/snail_pregnancy/pregnancy_model/weights/best.pt").export(format="onnx")
 
-!cp /content/snail_detector/det/weights/best.onnx        "/content/drive/MyDrive/"
-!cp /content/snail_sex/sex_model/weights/best.onnx       "/content/drive/MyDrive/"
-!cp /content/snail_pregnancy/pregnancy_model/weights/best.onnx "/content/drive/MyDrive/"
+!cp /content/snail_detector/det/weights/best.onnx        "/content/drive/MyDrive/snail_models/"
+!cp /content/snail_sex/sex_model/weights/best.onnx       "/content/drive/MyDrive/snail_models/"
+!cp /content/snail_pregnancy/pregnancy_model/weights/best.onnx "/content/drive/MyDrive/snail_models/"
 
-print("✅ Models saved to Google Drive!")
+# VERIFY each file actually landed — never trust the copy silently:
+import os
+for f in ["snail_detector", "snail_sex_model", "snail_pregnancy_model"]:
+    for ext in ["pt", "onnx"]:
+        p = f"/content/drive/MyDrive/snail_models/{f}.{ext}"
+        assert os.path.exists(p) and os.path.getsize(p) > 0, f"🚨 MISSING: {p}"
+        print(f"✅ {os.path.basename(p)} ({os.path.getsize(p)/1e6:.1f} MB)")
+
+print("✅ All models saved to Google Drive -> My Drive/snail_models/")
 ```
 
 > ⏱️ **Training time:** ~15 minutes per model (100 epochs on T4 GPU)
@@ -724,6 +786,8 @@ label-studio start                          # → http://localhost:8080
 # 2. Organize dataset
 python organize_dataset.py                       # classification splits
 node scripts/organize_pregnancy_dataset.mjs      # detection boxes → dataset_detection/
+python scripts/crop_snail_boxes.py               # second pass: snail crops → dataset_labeling/
+node scripts/organize_classification_dataset.mjs # second pass: LS JSON export → dataset_sex/ + dataset_pregnancy/
 
 # 3. Train in Colab
 #    -> Set runtime to T4 GPU

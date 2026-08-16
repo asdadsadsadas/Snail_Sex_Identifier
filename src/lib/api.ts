@@ -37,6 +37,50 @@ const API_URL = (() => {
   return "http://localhost:3001/classify";
 })();
 
+// ── Cycle mode (booth demo: results rotate on every scan) ────────
+// Every scan shows the NEXT result in the loop: Male → Female → Female
+// Pregnant → Male → ... regardless of what the server detected (even empty
+// photos advance the cycle). No server needed. Enabled via VITE_CYCLE_MODE
+// — run `npm run dev:cycle` (or `npm run build:cycle`) to launch this
+// version; edit cycleStates below to change the loop.
+const CYCLE_MODE = import.meta.env.VITE_CYCLE_MODE === "true";
+
+const cycleStates: ClassificationResult[] = [
+  {
+    sex: "Male",
+    pregnancyStatus: "Not Pregnant",
+    confidence: 96.2,
+    morphologicalNotes:
+      "Narrow shell aperture and darker, heavily calcified operculum — typical male morphology.",
+    snailDetected: true,
+  },
+  {
+    sex: "Female",
+    pregnancyStatus: "Not Pregnant",
+    confidence: 94.8,
+    morphologicalNotes:
+      "Wide shell aperture with pale operculum — typical female. No visible egg mass.",
+    snailDetected: true,
+  },
+  {
+    sex: "Female",
+    pregnancyStatus: "Pregnant",
+    confidence: 97.1,
+    morphologicalNotes:
+      "Wide shell aperture with a visible egg mass through the shell — a gravid (pregnant) female.",
+    snailDetected: true,
+  },
+];
+
+let cycleIndex = 0;
+
+/** Next result in the loop: Male → Female → Female Pregnant → back to Male. */
+function nextCycleResult(): ClassificationResult {
+  const result = cycleStates[cycleIndex % cycleStates.length];
+  cycleIndex += 1;
+  return result;
+}
+
 // ── Response Shape ───────────────────────────────────────────────
 
 export interface ClassificationResult {
@@ -60,6 +104,13 @@ export interface ClassificationResult {
  * - The backend server is unreachable
  */
 export async function classifySnailImage(imageBlob: Blob): Promise<ClassificationResult> {
+  // Cycle mode: skip the server entirely and rotate the displayed result on
+  // every scan (deterministic, instant, works offline at the booth).
+  if (CYCLE_MODE) {
+    await new Promise((resolve) => setTimeout(resolve, 900)); // feel like a real scan
+    return nextCycleResult();
+  }
+
   const forceMock = import.meta.env.VITE_USE_MOCK_YOLO === "true";
 
   if (!forceMock) {
