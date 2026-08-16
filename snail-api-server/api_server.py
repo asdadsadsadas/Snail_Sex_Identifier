@@ -20,6 +20,7 @@ import base64
 import io
 import json
 import os
+import sys
 import time
 import urllib.request
 from typing import Optional, Tuple
@@ -30,6 +31,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageOps
 
 import onnxruntime as ort
+
+# Emoji/UTF-8 log output breaks on Windows consoles (cp1252) — force UTF-8
+# so startup prints like "✅ loaded …" don't crash the server.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # ── Configuration ──────────────────────────────────────────────────
 # Each model can be a .pt or .onnx file. ONNX is preferred when both exist.
@@ -257,13 +264,22 @@ class DemoPins:
                 crop = _dhash(img.crop(tuple(int(v) for v in box)))
         return (full, crop)
 
-    def match(self, img: Image.Image, detector: Optional[Detector]) -> Optional[dict]:
-        """Return the pinned result dict for the best-matching snail, or None."""
+    def match(self, img: Image.Image, detector: Optional[Detector] = None,
+              crop_img: Optional[Image.Image] = None) -> Optional[dict]:
+        """Return the pinned result dict for the best-matching snail, or None.
+
+        crop_img is the already-detected snail crop — pass it when the caller
+        has already detected a snail so the crop hash is always valid (pins
+        only fire for photos that actually contain a snail). When None, the
+        detector is run here (used by check_demo_pins.py).
+        """
         if not self.enabled:
             return None
         full = _dhash(img)
         crop = None
-        if detector is not None:
+        if crop_img is not None:
+            crop = _dhash(crop_img)
+        elif detector is not None:
             found = detector.detect(img)
             if found is not None:
                 box, _ = found
@@ -452,25 +468,16 @@ async def classify(image: UploadFile = File(...)):
     # so bake the rotation in before predicting, or the boxes/classes are wrong.
     pil_image = ImageOps.exif_transpose(Image.open(io.BytesIO(contents))).convert("RGB")
 
-    # ── Booth pin mode: fixed result for a known booth snail ────
-    # Runs BEFORE everything else so pinned snails always show the SAME
-    # sex/pregnancy, no matter what Gemini would say. On a match, Gemini and
-    # the classifier models are skipped entirely.
-    pin = demo_pins.match(pil_image, detector)
-    if pin is not None:
-        return {
-            "sex": pin["sex"],
-            "pregnancyStatus": pin["pregnancyStatus"],
-            "confidence": float(pin.get("confidence", 97)),
-            "morphologicalNotes": pin.get("morphologicalNotes", ""),
-        }
-
-    # ── Stage 1: detect the snail ───────────────────────────────
+    # ── Stage 1: detect the snail FIRST ─────────────────────────
+    # Detection runs before booth pin matching on purpose: a photo with no
+    # snail must say "No snail detected", never a pinned result. Pins only
+    # fire when an actual snail is found (the crop hash is then always valid).
     if detector is None:
         return {
             "sex": "Unknown",
             "pregnancyStatus": "Unknown",
             "confidence": 0,
+            "snailDetected": False,
             "morphologicalNotes": "Detector model not deployed on this server yet.",
         }, 503
 
@@ -480,11 +487,25 @@ async def classify(image: UploadFile = File(...)):
             "sex": "Unknown",
             "pregnancyStatus": "Unknown",
             "confidence": 0,
+            "snailDetected": False,
             "morphologicalNotes": "No snail detected in the image.",
         }
 
     box, det_conf = found
     crop = pil_image.crop(tuple(int(v) for v in box))  # PIL crop: (left, top, right, bottom)
+
+    # ── Booth pin mode: fixed result for a KNOWN booth snail ────
+    # Only reached when a snail was detected. On a match, the pinned result is
+    # returned and the classifier models / Gemini are skipped entirely.
+    pin = demo_pins.match(pil_image, detector, crop_img=crop)
+    if pin is not None:
+        return {
+            "sex": pin["sex"],
+            "pregnancyStatus": pin["pregnancyStatus"],
+            "confidence": float(pin.get("confidence", 97)),
+            "snailDetected": True,
+            "morphologicalNotes": pin.get("morphologicalNotes", ""),
+        }
 
     # ── Stages 2+3: classify sex + pregnancy on the crop ────────
     # Priority: trained classifier models -> Gemini Vision fallback -> Unknown.
@@ -539,6 +560,7 @@ async def classify(image: UploadFile = File(...)):
         "sex": sex_label,
         "pregnancyStatus": preg_label,
         "confidence": combined_confidence,
+        "snailDetected": True,
         "morphologicalNotes": " ".join(notes_parts),
     }
 

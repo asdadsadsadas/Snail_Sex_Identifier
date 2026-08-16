@@ -9,6 +9,7 @@ import {
   Venus,
   Mars,
   Baby,
+  HelpCircle,
   RefreshCw,
   Save,
   RotateCcw,
@@ -223,6 +224,8 @@ export function ScanScreen({ onNavigate }: ScanScreenProps) {
   const showLiveCamera = cameraActive && !capturedImage && !classifying;
   const showCapturedImage = !!capturedImage;
   const showCameraFallback = cameraDenied && !cameraStarting && !capturedImage;
+  // Server sets snailDetected=false when no snail is in the photo.
+  const noSnailDetected = result?.snailDetected === false;
 
   return (
     <div className="flex flex-col h-full bg-black">
@@ -404,46 +407,67 @@ export function ScanScreen({ onNavigate }: ScanScreenProps) {
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none" />
               <div className="relative px-4 pb-4 pt-16">
                 <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-4 shadow-2xl">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      {result.sex === "Male" ? (
-                        <div className="w-8 h-8 rounded-xl bg-[#beead1] flex items-center justify-center">
-                          <Mars size={18} className="text-[#3f6653]" />
-                        </div>
-                      ) : (
-                        <div className="w-8 h-8 rounded-xl bg-[#ffdad6] flex items-center justify-center">
-                          <Venus size={18} className="text-[#ba1a1a]" />
-                        </div>
-                      )}
-                      <div>
-                        <span className="font-bold text-gray-900 text-sm">
-                          {result.sex}
-                        </span>
-                        <span
-                          className={cn(
-                            "ml-2 text-[10px] font-medium px-2 py-0.5 rounded-full",
-                            result.pregnancyStatus === "Pregnant"
-                              ? "bg-[#c1ecd4] text-[#274e3d]"
-                              : "bg-gray-100 text-gray-500"
-                          )}
-                        >
-                          {result.pregnancyStatus === "Pregnant" && (
-                            <Baby size={10} className="inline mr-0.5" />
-                          )}
-                          {result.pregnancyStatus}
-                        </span>
+                  {noSnailDetected ? (
+                    /* ── No snail in the photo ─────────────────────── */
+                    <div className="flex flex-col items-center text-center py-2">
+                      <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                        <XCircle size={24} className="text-gray-400" />
                       </div>
+                      <p className="font-bold text-gray-900 text-base">No Snail Detected</p>
+                      <p className="text-xs text-gray-500 leading-relaxed mt-1 max-w-[240px]">
+                        No snail was found in this photo. Move the snail into the
+                        frame and try again.
+                      </p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400">Confidence</p>
-                      <span className="text-sm font-bold text-[#03615f]">
-                        {result.confidence.toFixed(1)}%
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-500 leading-relaxed">
-                    {result.morphologicalNotes}
-                  </p>
+                  ) : (
+                    /* ── Snail detected → show the result ─────────── */
+                    <>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          {result.sex === "Male" ? (
+                            <div className="w-8 h-8 rounded-xl bg-[#beead1] flex items-center justify-center">
+                              <Mars size={18} className="text-[#3f6653]" />
+                            </div>
+                          ) : result.sex === "Female" ? (
+                            <div className="w-8 h-8 rounded-xl bg-[#ffdad6] flex items-center justify-center">
+                              <Venus size={18} className="text-[#ba1a1a]" />
+                            </div>
+                          ) : (
+                            <div className="w-8 h-8 rounded-xl bg-gray-200 flex items-center justify-center">
+                              <HelpCircle size={18} className="text-gray-500" />
+                            </div>
+                          )}
+                          <div>
+                            <span className="font-bold text-gray-900 text-sm">
+                              {result.sex}
+                            </span>
+                            <span
+                              className={cn(
+                                "ml-2 text-[10px] font-medium px-2 py-0.5 rounded-full",
+                                result.pregnancyStatus === "Pregnant"
+                                  ? "bg-[#c1ecd4] text-[#274e3d]"
+                                  : "bg-gray-100 text-gray-500"
+                              )}
+                            >
+                              {result.pregnancyStatus === "Pregnant" && (
+                                <Baby size={10} className="inline mr-0.5" />
+                              )}
+                              {result.pregnancyStatus}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-gray-400">Confidence</p>
+                          <span className="text-sm font-bold text-[#03615f]">
+                            {result.confidence.toFixed(1)}%
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500 leading-relaxed">
+                        {result.morphologicalNotes}
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             </motion.div>
@@ -502,26 +526,31 @@ export function ScanScreen({ onNavigate }: ScanScreenProps) {
           {/* ── Post-classification: Save / Retake ─────────────── */}
           {result && !classifying && !saved && showCapturedImage && (
             <div className="flex gap-3">
-              <button
-                onClick={saveRecord}
-                disabled={saving}
-                className="flex-1 py-3.5 rounded-2xl bg-white text-gray-900 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-gray-100 active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save size={18} />
-                    Save to Log
-                  </>
-                )}
-              </button>
+              {!noSnailDetected && (
+                <button
+                  onClick={saveRecord}
+                  disabled={saving}
+                  className="flex-1 py-3.5 rounded-2xl bg-white text-gray-900 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-gray-100 active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={18} />
+                      Save to Log
+                    </>
+                  )}
+                </button>
+              )}
               <button
                 onClick={retakePhoto}
-                className="py-3.5 px-5 rounded-2xl bg-white/20 backdrop-blur-sm text-white font-medium text-sm flex items-center gap-2 hover:bg-white/30 active:scale-[0.98] transition-all border border-white/30"
+                className={cn(
+                  "py-3.5 px-5 rounded-2xl bg-white/20 backdrop-blur-sm text-white font-medium text-sm flex items-center gap-2 hover:bg-white/30 active:scale-[0.98] transition-all border border-white/30",
+                  noSnailDetected && "flex-1 justify-center"
+                )}
               >
                 <RotateCcw size={18} />
                 Retake

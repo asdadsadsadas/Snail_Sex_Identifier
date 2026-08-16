@@ -21,6 +21,14 @@ import type { SnailGender, PregnantStatus } from "../types";
 // e.g. VITE_YOLO_API_URL=https://your-app.railway.app
 // Supports both full URLs (with /classify) and base URLs.
 const API_URL = (() => {
+  // In dev, call the SAME ORIGIN the app is served from (/classify), which the
+  // Vite dev server proxies to the FastAPI server. Using the absolute LAN-IP
+  // URL from .env here breaks: the browser sees a different origin + different
+  // self-signed cert, the fetch fails, and the app silently falls back to mock
+  // (random sex/pregnancy even when no snail is present).
+  if (import.meta.env.DEV) {
+    return "/classify";
+  }
   const env = import.meta.env.VITE_YOLO_API_URL;
   if (env) {
     // If it already ends with /classify, use as-is (backward compat)
@@ -32,10 +40,13 @@ const API_URL = (() => {
 // ── Response Shape ───────────────────────────────────────────────
 
 export interface ClassificationResult {
-  sex: SnailGender;
-  pregnancyStatus: PregnantStatus;
+  /** "Unknown" = no snail in the photo (or classification unavailable before mock fallback) */
+  sex: SnailGender | "Unknown";
+  pregnancyStatus: PregnantStatus | "Unknown";
   confidence: number;
   morphologicalNotes: string;
+  /** false when the photo contains no snail — the app shows "No Snail Detected" */
+  snailDetected?: boolean;
 }
 
 // ── Public API ───────────────────────────────────────────────────
@@ -63,11 +74,36 @@ export async function classifySnailImage(imageBlob: Blob): Promise<Classificatio
 
       if (response.ok) {
         const data = await response.json();
+        // No snail in the photo → always show "No Snail Detected" (never mock).
+        // (New server: snailDetected === false. Old server: no snailDetected
+        // field and confidence 0 with the "No snail" note.)
+        const noSnail = data.snailDetected === false ||
+          (data.snailDetected === undefined && (data.confidence ?? 0) === 0);
+        if (noSnail) {
+          return {
+            sex: "Unknown",
+            pregnancyStatus: "Unknown",
+            confidence: 0,
+            morphologicalNotes: data.morphologicalNotes ?? "No snail detected in the image.",
+            snailDetected: false,
+          };
+        }
+        // Snail detected but classification came back Unknown (e.g. Gemini
+        // rate-limited or the sex/pregnancy models aren't deployed) → fall
+        // back to the mock so the screen still shows a sex + pregnancy.
+        if ((data.sex as string) === "Unknown") {
+          const mock = await mockClassifySnailImage();
+          return {
+            ...mock,
+            morphologicalNotes: `${mock.morphologicalNotes} (simulated — AI classification currently unavailable)`,
+          };
+        }
         return {
           sex: data.sex as SnailGender,
           pregnancyStatus: data.pregnancyStatus as PregnantStatus,
           confidence: data.confidence,
           morphologicalNotes: data.morphologicalNotes ?? "",
+          snailDetected: data.snailDetected,
         };
       }
 
@@ -117,7 +153,7 @@ async function mockClassifySnailImage(): Promise<ClassificationResult> {
   const confidence = Math.round((93 + Math.random() * 6.9) * 10) / 10;
   const notes = pickRandom(mockNotes[sex]);
 
-  return { sex, pregnancyStatus, confidence, morphologicalNotes: notes };
+  return { sex, pregnancyStatus, confidence, morphologicalNotes: notes, snailDetected: true };
 }
 
 /** Helper: blob from a data URL */

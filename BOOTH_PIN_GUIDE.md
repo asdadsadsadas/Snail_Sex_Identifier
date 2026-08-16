@@ -14,14 +14,17 @@ consistent, and judges just see the app identify each snail automatically.
 
 ## How it works (in one paragraph)
 
-You take reference photos of each booth snail with your phone. Every scan is
-compared to those references using a **difference hash** (robust to
-lighting/brightness changes) on **both** the detected snail crop *and* the full
-frame. A pin only fires when both are under their thresholds (defaults crop≤10,
-full≤20 out of 64) — the crop identifies the snail, the full frame confirms the
-same container/scene, which stops similar-looking snails from getting confused.
-On a match, the pinned sex/pregnancy is returned directly. Anything that isn't
-one of your pinned snails still falls through to the normal pipeline safely.
+Every scan is processed in a fixed order: **1) detect the snail → 2) booth pin
+match → 3) normal AI pipeline**. If the detector finds **no snail** in the
+photo, the app says **"No Snail Detected"** — a pinned result is never shown
+for an empty photo. If a snail IS found, the scan is compared to your reference
+photos using a **difference hash** (robust to lighting/brightness changes) on
+**both** the detected snail crop *and* the full frame. A pin only fires when
+both are under their thresholds (defaults crop≤10, full≤20 out of 64) — the
+crop identifies the snail, the full frame confirms the same container/scene,
+which stops similar-looking snails from getting confused. On a match, the
+pinned sex/pregnancy is returned directly. Anything that isn't one of your
+pinned snails still falls through to the normal pipeline safely.
 
 ---
 
