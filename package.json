@@ -7,7 +7,7 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "dev:cycle": "vite --mode cycle --port=3000 --host=0.0.0.0",
     "dev:server": "NODE_ENV=development tsx watch src/server.ts",
-    "build": "vite build",
+    "build": "vite build --mode cycle",
     "build:cycle": "vite build --mode cycle",
     "start": "NODE_ENV=production tsx src/server.ts",
     "preview": "vite preview",

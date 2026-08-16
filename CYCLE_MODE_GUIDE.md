@@ -55,6 +55,19 @@ npm run build:cycle   # → dist/ with the cycle baked in
 npm run preview       # serve it locally, or upload dist/ anywhere static
 ```
 
+### Option C — the deployed (Render) version 🚀
+
+The **production build is cycle mode too**: `package.json`'s `build` script
+runs `vite build --mode cycle`, so the next deploy to Render (which builds
+with `npm run build`) ships the cycling version — every scan on the live URL
+rotates Male → Female → Female Pregnant, no API calls.
+
+To deploy the **real** (API-backed) version again, either:
+
+- set `VITE_CYCLE_MODE=false` in your host's dashboard env vars (overrides the
+  build — no code change, re-deploy picks it up), or
+- change the `build` script back to plain `vite build` in `package.json`.
+
 ---
 
 ## How the flag works
@@ -64,9 +77,12 @@ npm run preview       # serve it locally, or upload dist/ anywhere static
 | `.env.cycle` (committed) | `VITE_CYCLE_MODE=true` | Used by `npm run dev:cycle` / `build:cycle` — always cycles |
 | `.env` (local, gitignored) | `VITE_CYCLE_MODE=true` | Your local copy currently cycles too — `npm run dev` behaves like the cycle version |
 | `.env` | `VITE_CYCLE_MODE=false` | Back to **real detections** via the FastAPI server |
+| **Production build (`npm run build`)** | uses `.env.cycle` | The **deployed/Render version cycles too** — `"build": "vite build --mode cycle"` in `package.json` bakes the flag in |
+| Host dashboard env var (e.g. Render) | `VITE_CYCLE_MODE=false` | **Overrides** the build — deploy the real version without touching code |
 
 `vite --mode cycle` loads `.env.cycle` **on top of** `.env`, so the cycle
-scripts work no matter what your local `.env` says.
+scripts work no matter what your local `.env` says. The production `build`
+script points at the same mode, so what you demo locally is what ships.
 
 ---
 
@@ -112,11 +128,13 @@ The real version (detect → sex/pregnancy via the FastAPI server, Gemini
 fallback) needs `VITE_CYCLE_MODE=false`:
 
 ```bash
-# in .env, flip one line:
+# locally: in .env, flip one line:
 VITE_CYCLE_MODE=false
+# deployed: set VITE_CYCLE_MODE=false in the host dashboard (overrides the build)
 ```
 
-Then run the normal stack (see `PROJECT_SUMMARY.md` → "How to Run Locally"):
+Then run the normal stack locally (see `PROJECT_SUMMARY.md` → "How to Run
+Locally"):
 
 ```bash
 # Terminal 1 — FastAPI YOLO server (port 8000)
