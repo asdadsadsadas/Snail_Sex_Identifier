@@ -11,19 +11,22 @@ void main() {
     await tester.pumpAndSettle();
 
     // Onboarding slide 1 is visible.
-    expect(find.text('Snail Sexing AI'), findsOneWidget);
-    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Welcome to Snail Sexing AI'), findsOneWidget);
+    expect(find.text('Next'), findsOneWidget);
 
     // Advance through the 3 slides.
-    await tester.tap(find.text('Continue'));
+    await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Continue'));
+    expect(find.text('How It Works'), findsOneWidget);
+    await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
+    expect(find.text('Camera Access Needed'), findsOneWidget);
     await tester.tap(find.text('Get Started'));
     await tester.pumpAndSettle();
 
     // Now on the Home dashboard.
-    expect(find.text('Recent Scans'), findsOneWidget);
+    expect(find.text('Snail Dashboard'), findsOneWidget);
+    expect(find.text('Recent Logs'), findsOneWidget);
     expect(find.text('Total'), findsOneWidget);
     expect(find.text('Male'), findsOneWidget);
     expect(find.text('Female'), findsOneWidget);
@@ -36,9 +39,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // Straight to Home — no onboarding.
-    expect(find.text('Recent Scans'), findsOneWidget);
-    expect(find.text('Continue'), findsNothing);
-    expect(find.text('Get Started'), findsNothing);
+    expect(find.text('Snail Dashboard'), findsOneWidget);
+    expect(find.text('Welcome to Snail Sexing AI'), findsNothing);
+    expect(find.text('Next'), findsNothing);
   });
 
   testWidgets('bottom nav switches between the four tabs', (tester) async {
@@ -46,24 +49,26 @@ void main() {
     await tester.pumpWidget(const SnailSexingApp());
     await tester.pumpAndSettle();
 
-    // Scan tab.
-    await tester.tap(find.text('Scan'));
+    // Scan tab (nav labels are uppercase, matching the web app).
+    await tester.tap(find.text('SCAN'));
     await tester.pumpAndSettle();
     expect(find.text('Scan Snail'), findsOneWidget);
 
     // History tab.
-    await tester.tap(find.text('History'));
+    await tester.tap(find.text('HISTORY'));
     await tester.pumpAndSettle();
-    expect(find.text('Search by date (YYYY-MM-DD)'), findsOneWidget);
+    expect(find.text('History'), findsOneWidget);
+    expect(find.text('Search by date or notes...'), findsOneWidget);
 
-    // Stats tab.
-    await tester.tap(find.text('Stats'));
+    // Stats tab (empty state — no records in the test).
+    await tester.tap(find.text('STATS'));
     await tester.pumpAndSettle();
-    expect(find.text('Male / Female Ratio'), findsOneWidget);
+    expect(find.text('Statistics'), findsOneWidget);
+    expect(find.text('No data yet. Start scanning snails!'), findsOneWidget);
 
     // Back to Home.
-    await tester.tap(find.text('Home'));
+    await tester.tap(find.text('HOME'));
     await tester.pumpAndSettle();
-    expect(find.text('Recent Scans'), findsOneWidget);
+    expect(find.text('Recent Logs'), findsOneWidget);
   });
 }

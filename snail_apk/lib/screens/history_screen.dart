@@ -1,11 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../models.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
+import '../widgets/record_tile.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key, required this.storage, required this.onNavigate});
@@ -17,13 +15,12 @@ class HistoryScreen extends StatefulWidget {
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-enum _Filter { all, male, female, pregnant }
-
 class _HistoryScreenState extends State<HistoryScreen> {
   List<SnailRecord> _all = [];
   bool _loading = true;
-  String _query = '';
-  _Filter _filter = _Filter.all;
+  String _search = '';
+  String _filterGender = '';
+  String _filterPregnancy = '';
 
   @override
   void initState() {
@@ -40,100 +37,186 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
   }
 
+  bool get _hasFilters =>
+      _search.isNotEmpty || _filterGender.isNotEmpty || _filterPregnancy.isNotEmpty;
+
   List<SnailRecord> get _filtered {
-    final q = _query.trim().toLowerCase();
+    final q = _search.trim().toLowerCase();
     return _all.where((r) {
-      if (q.isNotEmpty && !r.date.contains(q)) return false;
-      switch (_filter) {
-        case _Filter.all:
-          return true;
-        case _Filter.male:
-          return r.gender == SnailGender.male;
-        case _Filter.female:
-          return r.gender == SnailGender.female;
-        case _Filter.pregnant:
-          return r.pregnantStatus == PregnantStatus.pregnant;
-      }
+      final matchSearch = q.isEmpty ||
+          r.date.contains(q) ||
+          r.morphologicalNotes.toLowerCase().contains(q);
+      final matchGender = _filterGender.isEmpty || r.gender.label == _filterGender;
+      final matchPregnancy =
+          _filterPregnancy.isEmpty || r.pregnantStatus.label == _filterPregnancy;
+      return matchSearch && matchGender && matchPregnancy;
     }).toList();
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _search = '';
+      _filterGender = '';
+      _filterPregnancy = '';
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('History', style: TextStyle(fontWeight: FontWeight.bold)),
-        actions: [
-          IconButton(tooltip: 'Refresh', onPressed: _loading ? null : _refresh, icon: const Icon(Icons.refresh_rounded)),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: TextField(
-              onChanged: (v) => setState(() => _query = v),
-              decoration: InputDecoration(
-                hintText: 'Search by date (YYYY-MM-DD)',
-                prefixIcon: const Icon(Icons.search_rounded),
-                filled: true,
-                fillColor: Colors.white,
-                isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.history_rounded,
+                          size: 24, color: AppColors.teal),
+                      SizedBox(width: 8),
+                      Text('History', style: AppText.h1),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _loading
+                        ? 'Loading…'
+                        : '${_all.length} record${_all.length != 1 ? 's' : ''} in total',
+                    style: AppText.subtitle,
+                  ),
+                ],
+              ),
+            ),
+            // Search bar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: TextField(
+                onChanged: (v) => setState(() => _search = v),
+                decoration: InputDecoration(
+                  hintText: 'Search by date or notes...',
+                  hintStyle: const TextStyle(color: AppColors.gray400, fontSize: 14),
+                  prefixIcon: const Icon(Icons.search_rounded,
+                      size: 18, color: AppColors.gray400),
+                  filled: true,
+                  fillColor: Colors.white,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.gray200),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.gray200),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.tealDark, width: 1.5),
+                  ),
                 ),
               ),
             ),
-          ),
-          SizedBox(
-            height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                _chip(_Filter.all, 'All'),
-                _chip(_Filter.male, 'Male'),
-                _chip(_Filter.female, 'Female'),
-                _chip(_Filter.pregnant, 'Pregnant'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _filtered.isEmpty
-                    ? _buildEmpty()
-                    : RefreshIndicator(
-                        onRefresh: _refresh,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: _filtered.length,
-                          itemBuilder: (context, i) => _tile(_filtered[i]),
+            // Filter chips
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  const Icon(Icons.filter_alt_rounded,
+                      size: 16, color: AppColors.gray400),
+                  _chip('Male', _filterGender == 'Male', () {
+                    setState(() => _filterGender = _filterGender == 'Male' ? '' : 'Male');
+                  }, activeBg: AppColors.teal),
+                  _chip('Female', _filterGender == 'Female', () {
+                    setState(() => _filterGender = _filterGender == 'Female' ? '' : 'Female');
+                  }, activeBg: AppColors.teal),
+                  _chip('Pregnant', _filterPregnancy == 'Pregnant', () {
+                    setState(() =>
+                        _filterPregnancy = _filterPregnancy == 'Pregnant' ? '' : 'Pregnant');
+                  }, activeBg: AppColors.pregBar),
+                  _chip('Not Pregnant', _filterPregnancy == 'Not Pregnant', () {
+                    setState(() => _filterPregnancy =
+                        _filterPregnancy == 'Not Pregnant' ? '' : 'Not Pregnant');
+                  }, activeBg: AppColors.pregBar),
+                  if (_hasFilters)
+                    InkWell(
+                      onTap: _clearFilters,
+                      borderRadius: BorderRadius.circular(999),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.close_rounded, size: 14, color: AppColors.gray400),
+                            SizedBox(width: 4),
+                            Text('Clear',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.gray400)),
+                          ],
                         ),
                       ),
-          ),
-        ],
+                    ),
+                ],
+              ),
+            ),
+            // List
+            Expanded(
+              child: _loading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppColors.teal))
+                  : _filtered.isEmpty
+                      ? _buildEmpty()
+                      : RefreshIndicator(
+                          onRefresh: _refresh,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
+                            itemCount: _filtered.length,
+                            itemBuilder: (context, i) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: RecordTile(
+                                record: _filtered[i],
+                                photoSize: 56,
+                                onTap: () =>
+                                    widget.onNavigate('detail:${_filtered[i].id}'),
+                              ),
+                            ),
+                          ),
+                        ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _chip(_Filter f, String label) {
-    final active = _filter == f;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: active,
-        onSelected: (_) => setState(() => _filter = f),
-        selectedColor: AppColors.teal,
-        labelStyle: TextStyle(
-          color: active ? Colors.white : Colors.grey.shade700,
-          fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+  Widget _chip(String label, bool active, VoidCallback onTap, {required Color activeBg}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? activeBg : Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: active ? activeBg : AppColors.gray200),
         ),
-        backgroundColor: Colors.white,
-        side: BorderSide(color: active ? AppColors.teal : Colors.grey.shade300),
-        showCheckmark: false,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: active ? Colors.white : AppColors.gray600,
+          ),
+        ),
       ),
     );
   }
@@ -143,70 +226,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_off_rounded, size: 48, color: Colors.grey.shade300),
+          const Icon(Icons.filter_vintage_rounded,
+              size: 40, color: AppColors.gray200),
           const SizedBox(height: 12),
           Text(
-            'No records match',
-            style: TextStyle(color: Colors.grey.shade500, fontSize: 15),
+            _all.isEmpty ? 'No records yet. Start scanning!' : 'No records match your filters.',
+            style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: AppColors.gray400),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _tile(SnailRecord record) {
-    final isMale = record.gender == SnailGender.male;
-    final badgeColor = isMale ? AppColors.maleBg : AppColors.femaleBg;
-    final iconColor = isMale ? AppColors.maleFg : AppColors.femaleFg;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ListTile(
-        onTap: () => widget.onNavigate('detail:${record.id}'),
-        leading: ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: record.photoBase64.isEmpty
-              ? Container(
-                  width: 48,
-                  height: 48,
-                  color: Colors.grey.shade200,
-                  child: const Icon(Icons.image_rounded, color: Colors.grey),
-                )
-              : Image.memory(
-                  base64Decode(record.photoBase64),
-                  width: 48,
-                  height: 48,
-                  fit: BoxFit.cover,
-                ),
-        ),
-        title: Text(
-          '${record.gender.label} · ${record.pregnantStatus.label}',
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-        ),
-        subtitle: Text(
-          '${DateFormat('MMM d, yyyy').format(record.createdAt)} · ${record.confidence.toStringAsFixed(1)}% conf.',
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-        ),
-        trailing: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: badgeColor,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(isMale ? Icons.male_rounded : Icons.female_rounded,
-              size: 18, color: iconColor),
-        ),
       ),
     );
   }

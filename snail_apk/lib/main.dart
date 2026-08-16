@@ -9,6 +9,7 @@ import 'screens/scan_screen.dart';
 import 'screens/stats_screen.dart';
 import 'services/storage_service.dart';
 import 'theme.dart';
+import 'widgets/bottom_nav.dart';
 
 const String _onboardingKey = 'snail_sexing_onboarding_done';
 
@@ -91,31 +92,9 @@ class _SnailSexingAppState extends State<SnailSexingApp> {
                 StatsScreen(storage: _storage),
               ],
             ),
-            bottomNavigationBar: NavigationBar(
-              selectedIndex: _tab,
-              onDestinationSelected: (i) => setState(() => _tab = i),
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.home_outlined),
-                  selectedIcon: Icon(Icons.home_rounded),
-                  label: 'Home',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.qr_code_scanner_rounded),
-                  selectedIcon: Icon(Icons.qr_code_scanner_rounded),
-                  label: 'Scan',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.history_outlined),
-                  selectedIcon: Icon(Icons.history_rounded),
-                  label: 'History',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.bar_chart_outlined),
-                  selectedIcon: Icon(Icons.bar_chart_rounded),
-                  label: 'Stats',
-                ),
-              ],
+            bottomNavigationBar: AppBottomNav(
+              current: _tab,
+              onSelect: (i) => setState(() => _tab = i),
             ),
           );
         },

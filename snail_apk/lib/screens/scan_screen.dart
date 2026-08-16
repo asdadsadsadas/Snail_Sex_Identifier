@@ -305,6 +305,8 @@ class _ScanScreenState extends State<ScanScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
+                  elevation: 6,
+                  shadowColor: AppColors.teal.withValues(alpha: 0.35),
                 ),
               ),
             ),

@@ -1,11 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../models.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
+import '../widgets/record_tile.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.storage, required this.onNavigate});
@@ -41,182 +39,150 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final statCards = [
+      _StatSpec('Total', _counts.total, Icons.filter_vintage_rounded, AppColors.mint, AppColors.teal),
+      _StatSpec('Male', _counts.male, Icons.male_rounded, AppColors.maleBg, AppColors.maleFg),
+      _StatSpec('Female', _counts.female, Icons.female_rounded, AppColors.femaleBg, AppColors.femaleFg),
+      _StatSpec('Pregnant', _counts.pregnant, Icons.child_care_rounded, AppColors.pregBg, AppColors.pregFg),
+    ];
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Snail Sexing AI', style: TextStyle(fontWeight: FontWeight.bold)),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : _refresh,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // Count cards
-            Row(
-              children: [
-                _countCard('Total', _counts.total, AppColors.teal, Icons.scanner_rounded),
-                const SizedBox(width: 10),
-                _countCard('Male', _counts.male, AppColors.maleFg, Icons.male_rounded),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                _countCard('Female', _counts.female, AppColors.femaleFg, Icons.female_rounded),
-                const SizedBox(width: 10),
-                _countCard('Pregnant', _counts.pregnant, AppColors.pregFg, Icons.child_care_rounded),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Recent Scans',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                TextButton(
-                  onPressed: () => widget.onNavigate('history'),
-                  child: const Text('View all'),
-                ),
-              ],
-            ),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_recent.isEmpty)
-              _buildEmpty()
-            else
-              ..._recent.map(_recentTile),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _countCard(String label, int value, Color color, IconData icon) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 18, color: color),
-                const Spacer(),
-                Text(
-                  value.toString(),
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(label, style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmpty() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.inbox_rounded, size: 40, color: Colors.grey.shade300),
-          const SizedBox(height: 10),
-          Text(
-            'No scans yet. Tap Scan to classify your first snail!',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade500, height: 1.4),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _recentTile(SnailRecord record) {
-    final isMale = record.gender == SnailGender.male;
-    final badgeColor = isMale ? AppColors.maleBg : AppColors.femaleBg;
-    final iconColor = isMale ? AppColors.maleFg : AppColors.femaleFg;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ListTile(
-        onTap: () => widget.onNavigate('detail:${record.id}'),
-        leading: ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: record.photoBase64.isEmpty
-              ? Container(
-                  width: 48,
-                  height: 48,
-                  color: Colors.grey.shade200,
-                  child: const Icon(Icons.image_rounded, color: Colors.grey),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+            children: [
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 80),
+                  child: Center(child: CircularProgressIndicator(color: AppColors.teal)),
                 )
-              : Image.memory(
-                  base64Decode(record.photoBase64),
-                  width: 48,
-                  height: 48,
-                  fit: BoxFit.cover,
+              else ...[
+                // Header
+                Row(
+                  children: [
+                    const Icon(Icons.filter_vintage_rounded, size: 24, color: AppColors.teal),
+                    const SizedBox(width: 8),
+                    const Text('Snail Dashboard', style: AppText.h1),
+                  ],
                 ),
-        ),
-        title: Text(
-          '${record.gender.label} · ${record.pregnantStatus.label}',
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-        ),
-        subtitle: Text(
-          DateFormat('MMM d, yyyy').format(record.createdAt),
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-        ),
-        trailing: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: badgeColor,
-            borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 4),
+                Text('Live classification overview', style: AppText.subtitle),
+                const SizedBox(height: 20),
+                // Stats grid (2x2 colored cards)
+                Row(
+                  children: [
+                    Expanded(child: _statCard(statCards[0])),
+                    const SizedBox(width: 12),
+                    Expanded(child: _statCard(statCards[1])),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _statCard(statCards[2])),
+                    const SizedBox(width: 12),
+                    Expanded(child: _statCard(statCards[3])),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                // Recent logs header
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Recent Logs', style: AppText.h2),
+                    InkWell(
+                      onTap: () => widget.onNavigate('history'),
+                      borderRadius: BorderRadius.circular(8),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Row(
+                          children: [
+                            Text('View All',
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.teal)),
+                            SizedBox(width: 4),
+                            Icon(Icons.arrow_forward_rounded,
+                                size: 16, color: AppColors.teal),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (_recent.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 28),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.auto_awesome_rounded,
+                              size: 32, color: AppColors.gray300),
+                          SizedBox(height: 8),
+                          Text('No records yet. Start scanning!',
+                              style: AppText.muted),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  ..._recent.map(
+                    (r) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: RecordTile(
+                        record: r,
+                        onTap: () => widget.onNavigate('detail:${r.id}'),
+                      ),
+                    ),
+                  ),
+              ],
+            ],
           ),
-          child: Icon(isMale ? Icons.male_rounded : Icons.female_rounded,
-              size: 18, color: iconColor),
         ),
       ),
     );
   }
+
+  Widget _statCard(_StatSpec spec) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: spec.bg,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(spec.icon, size: 32, color: spec.fg),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(spec.value.toString(),
+                  style: const TextStyle(
+                      fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.gray900)),
+              Text(spec.label,
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: spec.fg)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatSpec {
+  const _StatSpec(this.label, this.value, this.icon, this.bg, this.fg);
+
+  final String label;
+  final int value;
+  final IconData icon;
+  final Color bg;
+  final Color fg;
 }
