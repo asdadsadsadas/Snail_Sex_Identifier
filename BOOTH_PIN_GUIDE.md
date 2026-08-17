@@ -121,11 +121,10 @@ taken (same angle, same distance).
 
 ## 🌐 Deploy booth pin mode to Render (optional — public URL for the booth)
 
-> ✅ **Already deployed and live** — both services below are up (verified:
-> the frontend serves the app from any phone, and `snail-api-booth` `/health`
-> reports `detector: true` / ONNX with real photo scans returning
-> `snailDetected: true`). The only remaining steps are enabling the pins
-> themselves and (optionally) the Gemini key.
+> ✅ **Already deployed and live** — both services below are up, and the pins
+> are **on**: `demo_pins.json` is committed and
+> `https://snail-api-booth.onrender.com/health` reports `"demoPins": 3`.
+> The only remaining step is (optionally) the Gemini key.
 
 If you'd rather run the booth from **any phone over the internet** (no Wi-Fi
 setup, real HTTPS, no cert warning — versus the LAN `https://192.168.1.x:3000`
