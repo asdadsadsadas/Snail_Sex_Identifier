@@ -121,10 +121,15 @@ taken (same angle, same distance).
 
 ## 🌐 Deploy booth pin mode to Render (optional — public URL for the booth)
 
-The science-fair demo works perfectly on the LAN (`https://192.168.1.x:3000`).
+> ✅ **Already deployed and live** — both services below are up (verified:
+> the frontend serves the app from any phone, and `snail-api-booth` `/health`
+> reports `detector: true` / ONNX with real photo scans returning
+> `snailDetected: true`). The only remaining steps are enabling the pins
+> themselves and (optionally) the Gemini key.
+
 If you'd rather run the booth from **any phone over the internet** (no Wi-Fi
-setup, real HTTPS, no cert warning), there's a dedicated Render deployment
-that runs booth pin mode:
+setup, real HTTPS, no cert warning — versus the LAN `https://192.168.1.x:3000`
+setup), there's a dedicated Render deployment that runs booth pin mode:
 
 | Service | URL | What it is |
 |---|---|---|
@@ -135,23 +140,23 @@ The reference photos **never get uploaded** — `build_demo_pins.py` bakes each
 photo's difference hashes into `demo_pins.json`, so the config is
 **self-contained** and the photos stay on your machine.
 
-**One-time setup (do after Steps 3–4 above):**
+**Enable the pins (the services are already live — ~2 minutes, do after
+Steps 3–4 above):**
 
 ```bash
-# 1. generate the config (from snail-api-server/)
-python build_demo_pins.py
+# 1. drop each snail's photos into its folder, then generate the config
+python build_demo_pins.py          # from snail-api-server/
 
 # 2. commit ONLY the config — the photos stay gitignored
 git add snail-api-server/demo_pins.json
 git commit -m "Enable booth pins for the Render booth version"
-git push   # snail-api-booth + snail-sex-identifier-booth auto-deploy
+git push                           # snail-api-booth auto-redeploys with pins on
 ```
 
-Both services are defined in `render.yaml` — create them once via **New →
-Blueprint** if they don't exist yet, and set `GEMINI_API_KEY` on
-`snail-api-booth` (used only for scans that don't match a pin). Until you run
-Step 1, `snail-api-booth` still works — it just falls through to real
-detections (detector + Gemini) instead of pins.
+**While you're in the dashboard:** set `GEMINI_API_KEY` on `snail-api-booth`
+(Environment → the `sync: false` entry). It's used only for scans that don't
+match a pin — without it those return `Unknown` and the app shows a mock
+result. Pinned snails bypass Gemini entirely.
 
 **At the fair:** open `https://snail-sex-identifier-booth.onrender.com` on any
 phone. Scan each snail → pinned result in ~0.05s. Confirm with

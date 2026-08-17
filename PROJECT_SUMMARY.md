@@ -182,17 +182,17 @@ The app runs as **two services** on Render's free tier, both auto-deploying from
 
 ### 3. 🎪 Booth-pin version (science-fair demo)
 
-Two extra services in the same `render.yaml` blueprint — a second API with
-**booth pin mode** and a second frontend wired to it:
+**✅ Deployed and live** — two extra services in the same `render.yaml`
+blueprint: a second API with booth pin mode and a second frontend wired to it:
 
-- **`snail-api-booth`** (`https://snail-api-booth.onrender.com`) — the same FastAPI server, but booth pin mode is **active once `demo_pins.json` is committed**. The config is self-contained: `build_demo_pins.py` bakes each reference photo's difference hashes into the JSON, so the reference photos **never get uploaded** (they stay gitignored locally).
-- **`snail-sex-identifier-booth`** (`https://snail-sex-identifier-booth.onrender.com`) — the app built **real-API-backed** (`npm run build:real` = `vite build --mode real`, `VITE_CYCLE_MODE=false` from `.env.real`) and pointed at the booth API via `VITE_YOLO_API_URL`. The public `snail-sex-identifier` still cycles; this booth version is the one wired to the pinned API.
+- **`snail-api-booth`** (`https://snail-api-booth.onrender.com`) — the same FastAPI server, but booth pin mode is **active once `demo_pins.json` is committed**. The config is self-contained: `build_demo_pins.py` bakes each reference photo's difference hashes into the JSON, so the reference photos **never get uploaded** (they stay gitignored locally). Verified live: `/health` → `detector: true` (ONNX), and a real full-photo scan returns `snailDetected: true`.
+- **`snail-sex-identifier-booth`** (`https://snail-sex-identifier-booth.onrender.com`) — the app built **real-API-backed** (`npm run build:real` = `vite build --mode real`, `VITE_CYCLE_MODE=false` from `.env.real`) and pointed at the booth API via `VITE_YOLO_API_URL`. The public `snail-sex-identifier` still cycles; this booth version is the one wired to the pinned API. Build gotcha fixed: Render builds with `NODE_ENV=production` (skips devDependencies where `vite`/`tsx` live), so the build command is `npm install --include=dev && npm run build:real`.
 
-**Enable pins:** add 4–8 reference photos per snail to `demo_pins/snail1|2|3/` → `python build_demo_pins.py` (from `snail-api-server/`) → commit `demo_pins.json` → push. Set `GEMINI_API_KEY` on `snail-api-booth` in Render's dashboard (for scans that don't match a pin). Full walkthrough in **`BOOTH_PIN_GUIDE.md`**.
+**Current status:** both services deployed; **pins off** until `demo_pins.json` is committed (add 4–8 reference photos per snail to `demo_pins/snail1|2|3/` → `python build_demo_pins.py` → commit → push). `GEMINI_API_KEY` on `snail-api-booth` is **not set yet** — add it in Render's dashboard so non-pinned scans get real sex/pregnancy instead of a mock result. Full walkthrough in **`BOOTH_PIN_GUIDE.md`**.
 
 ### To redeploy:
 
-1. Push to GitHub → both services auto-deploy from `master`
+1. Push to GitHub → all services auto-deploy from `master` (frontend + API, plus both booth services via blueprint sync)
 2. **Known free-tier quirks**: the API spins down after ~15 min idle (first request takes ~30–60s to wake) and Render may restart free instances at any time — occasional 502s on `/classify` are infra flakiness, not app bugs (the code fails soft to `Unknown`). **For an all-day demo, run locally instead** (see below).
 
 ---
