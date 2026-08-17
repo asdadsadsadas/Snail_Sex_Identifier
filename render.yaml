@@ -44,11 +44,14 @@ services:
   # cycles for everyone else). build:real = `vite build --mode real`
   # (VITE_CYCLE_MODE=false from .env.real); the API URL below overrides
   # .env at build time (process env beats .env files).
+  # NOTE: Render builds with NODE_ENV=production, so the automatic install
+  # skips devDependencies — but vite (build) and tsx (start command) live
+  # there. The explicit `npm install --include=dev` restores them.
   - type: web
     name: snail-sex-identifier-booth
     runtime: node
     rootDir: .
-    buildCommand: npm run build:real
+    buildCommand: npm install --include=dev && npm run build:real
     startCommand: NODE_ENV=production npx tsx src/server.ts
     healthCheckPath: /health
     plan: free
