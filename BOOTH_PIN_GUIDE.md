@@ -119,6 +119,50 @@ taken (same angle, same distance).
 
 ---
 
+## 🌐 Deploy booth pin mode to Render (optional — public URL for the booth)
+
+The science-fair demo works perfectly on the LAN (`https://192.168.1.x:3000`).
+If you'd rather run the booth from **any phone over the internet** (no Wi-Fi
+setup, real HTTPS, no cert warning), there's a dedicated Render deployment
+that runs booth pin mode:
+
+| Service | URL | What it is |
+|---|---|---|
+| `snail-sex-identifier-booth` | `https://snail-sex-identifier-booth.onrender.com` | The app, built **real-API-backed** (no cycling), pointed at the booth API below |
+| `snail-api-booth` | `https://snail-api-booth.onrender.com` | The FastAPI server with **booth pins active** (`/health` → `"demoPins": 3`) |
+
+The reference photos **never get uploaded** — `build_demo_pins.py` bakes each
+photo's difference hashes into `demo_pins.json`, so the config is
+**self-contained** and the photos stay on your machine.
+
+**One-time setup (do after Steps 3–4 above):**
+
+```bash
+# 1. generate the config (from snail-api-server/)
+python build_demo_pins.py
+
+# 2. commit ONLY the config — the photos stay gitignored
+git add snail-api-server/demo_pins.json
+git commit -m "Enable booth pins for the Render booth version"
+git push   # snail-api-booth + snail-sex-identifier-booth auto-deploy
+```
+
+Both services are defined in `render.yaml` — create them once via **New →
+Blueprint** if they don't exist yet, and set `GEMINI_API_KEY` on
+`snail-api-booth` (used only for scans that don't match a pin). Until you run
+Step 1, `snail-api-booth` still works — it just falls through to real
+detections (detector + Gemini) instead of pins.
+
+**At the fair:** open `https://snail-sex-identifier-booth.onrender.com` on any
+phone. Scan each snail → pinned result in ~0.05s. Confirm with
+`https://snail-api-booth.onrender.com/health` → `"demoPins": 3`.
+
+> **Note:** the public `snail-sex-identifier` version still cycles (Male →
+> Female → Female Pregnant) — that's intentional. The booth version is the one
+> wired to the pinned API.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -136,8 +180,8 @@ taken (same angle, same distance).
 |---|---|
 | `snail-api-server/build_demo_pins.py` | Turns photo folders + fixed results into `demo_pins.json` (edit the `SNAILS` list here) |
 | `snail-api-server/check_demo_pins.py` | Verifies each snail matches reliably **before the fair** |
-| `snail-api-server/demo_pins.json` | Generated config — loaded by the API server at startup (gitignored) |
-| `snail-api-server/demo_pins/` | Reference photo folders (gitignored, local-only) |
+| `snail-api-server/demo_pins.json` | Generated config — **self-contained** (reference hashes baked in, no photos). Committed so the `snail-api-booth` Render service can load pins |
+| `snail-api-server/demo_pins/` | Reference photo folders (gitignored, local-only — never uploaded) |
 | `snail-api-server/api_server.py` | The matcher (difference hash on crop + full frame, dual thresholds) |
 | `snail-api-server/README.md` | Server docs (includes a shorter version of this guide) |
 

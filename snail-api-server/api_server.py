@@ -232,6 +232,13 @@ class DemoPins:
         for pin in data.get("pins", []):
             refs = []
             for ref in pin.get("references", []):
+                if isinstance(ref, dict):
+                    # Self-contained hash baked by build_demo_pins.py — no
+                    # photo file needed at runtime (photos stay local).
+                    if isinstance(ref.get("full"), int):
+                        refs.append((ref["full"], ref.get("crop")))
+                        continue
+                    ref = ref.get("path", "")
                 h = self._hash_file(ref, detector)
                 if h is not None:
                     refs.append(h)

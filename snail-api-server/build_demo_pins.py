@@ -24,6 +24,12 @@ api_server.py loads to pin them.
        python check_demo_pins.py demo_pins/snail1/01.jpg
    → should print "MATCH ✅ snail1 (crop X<=10 & full Y<=20)". If a photo
    shows "NO MATCH", add more reference photos of that snail.
+
+5. (Optional) Deploy booth pin mode to Render: each reference photo's
+   difference hashes are baked into demo_pins.json, so the config is
+   SELF-CONTAINED — the photos themselves stay on your machine. Commit
+   demo_pins.json and push: the snail-api-booth service loads the pins at
+   startup. See BOOTH_PIN_GUIDE.md → "Deploy booth pin mode to Render".
 """
 
 import json
@@ -31,6 +37,12 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)  # allow `from api_server import ...` below
+
+from PIL import Image, ImageOps
+
+from api_server import Detector, _dhash  # noqa: E402
+
 REF_ROOT = os.path.join(HERE, "demo_pins")
 OUT = os.path.join(HERE, "demo_pins.json")
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".heic")
@@ -94,6 +106,34 @@ def find_photos(folder: str) -> list:
     return out
 
 
+def precompute_hashes(photo_paths: list, detector) -> list:
+    """Hash each reference photo → self-contained {"full": int, "crop": int|None}.
+
+    The hashes are baked into demo_pins.json so the deployed server can load
+    pins WITHOUT the photos — reference photos never leave your machine. crop
+    is the detected-snail crop hash (None if no snail was found or the
+    detector isn't available; matching then uses the full-frame hash only).
+    """
+    refs = []
+    for rel in photo_paths:
+        full_path = os.path.join(HERE, rel)
+        try:
+            img = ImageOps.exif_transpose(Image.open(full_path)).convert("RGB")
+        except Exception as e:  # noqa: BLE001
+            print(f"    ⚠ unreadable reference {rel}: {e}")
+            continue
+        full = _dhash(img)
+        crop = None
+        if detector is not None:
+            found = detector.detect(img)
+            if found is not None:
+                box, _ = found
+                crop = _dhash(img.crop(tuple(int(v) for v in box)))
+        refs.append({"full": full, "crop": crop})
+        print(f"    📸 {os.path.basename(rel)} → full={full} crop={crop}")
+    return refs
+
+
 def main() -> int:
     if not os.path.isdir(REF_ROOT):
         print(f"❌ demo_pins/ folder not found at {REF_ROOT}")
@@ -101,10 +141,21 @@ def main() -> int:
         return 1
 
     pins = []
+    detector = None
     for snail in SNAILS:
         photos = find_photos(snail["folder"])
         if not photos:
             print(f"⚠  no photos in demo_pins/{snail['folder']}/ — skipped")
+            continue
+        if detector is None:
+            try:
+                detector = Detector("snail_detector")
+                print(f"  ✅ detector loaded ({detector.kind}) — crop hashes baked in")
+            except Exception as e:  # noqa: BLE001
+                print(f"  ⚠ detector not available ({e}) — pins use full-frame hashes only")
+        refs = precompute_hashes(photos, detector)
+        if not refs:
+            print(f"⚠  no readable photos in demo_pins/{snail['folder']}/ — skipped")
             continue
         pins.append({
             "id": snail["folder"],
@@ -113,10 +164,10 @@ def main() -> int:
             "pregnancyStatus": snail["pregnancyStatus"],
             "confidence": snail["confidence"],
             "morphologicalNotes": snail["morphologicalNotes"],
-            "references": photos,
+            "references": refs,
         })
         print(f"✅ {snail['label']} → {snail['sex']}/{snail['pregnancyStatus']} "
-              f"({len(photos)} reference photos)")
+              f"({len(refs)} reference photos)")
 
     if not pins:
         print("❌ No pins built — add photos to demo_pins/<folder>/ first.")
@@ -126,8 +177,10 @@ def main() -> int:
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
     print(f"\n🎪 Wrote {OUT} — {len(pins)} booth snail(s) pinned.")
-    print("   Restart the API server, then verify with:")
-    print("   python check_demo_pins.py demo_pins/snail1/<photo>.jpg")
+    print("   demo_pins.json is self-contained (hashes only — no photos).")
+    print("   Verify locally:  python check_demo_pins.py demo_pins/snail1/<photo>.jpg")
+    print("   Deploy to Render: commit demo_pins.json and push — the booth API")
+    print("   (snail-api-booth) loads the pins at startup. See BOOTH_PIN_GUIDE.md.")
     return 0
 
 

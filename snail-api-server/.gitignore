@@ -14,7 +14,8 @@ __pycache__/
 venv/
 .env
 
-# Booth pin mode — reference photos + generated config stay local (the
-# pinned results are for the science-fair booth, not the repo)
-demo_pins.json
+# Booth pin mode — reference PHOTOS stay local (the pinned results are for
+# the science-fair booth, not the repo). demo_pins.json IS committed: since
+# build_demo_pins.py bakes the reference hashes into it, the deployed booth
+# API (snail-api-booth) can load pins without the photos.
 demo_pins/

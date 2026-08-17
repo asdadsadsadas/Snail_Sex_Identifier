@@ -9,6 +9,7 @@
     "dev:server": "NODE_ENV=development tsx watch src/server.ts",
     "build": "vite build --mode cycle",
     "build:cycle": "vite build --mode cycle",
+    "build:real": "vite build --mode real",
     "start": "NODE_ENV=production tsx src/server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",

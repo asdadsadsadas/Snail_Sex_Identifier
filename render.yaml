@@ -16,3 +16,42 @@ services:
     startCommand: uvicorn api_server:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     plan: free
+
+  # 🎪 BOOTH PIN VERSION (science-fair demo) — same FastAPI server, but
+  # demo_pins.json is committed so booth pin mode is active here (the plain
+  # snail-api service stays pin-free). The reference photos never leave your
+  # machine: build_demo_pins.py bakes their hashes into demo_pins.json.
+  # Enable pins: add photos → `python build_demo_pins.py` → commit
+  # demo_pins.json → push. Until then this service still does real
+  # detections (detector + Gemini fallback for sex/pregnancy).
+  - type: web
+    name: snail-api-booth
+    runtime: python
+    rootDir: snail-api-server
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api_server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    plan: free
+    envVars:
+      # Gemini Vision fallback for scans that don't match a pin — set the
+      # value in Render's dashboard (sync: false = not stored in git).
+      - key: GEMINI_API_KEY
+        sync: false
+
+  # 🎪 Booth-pin FRONTEND — the same app, but built real-API-backed (no
+  # cycling) and pointed at the booth API above, so the fair demo runs from
+  # any phone over the internet (the public snail-sex-identifier still
+  # cycles for everyone else). build:real = `vite build --mode real`
+  # (VITE_CYCLE_MODE=false from .env.real); the API URL below overrides
+  # .env at build time (process env beats .env files).
+  - type: web
+    name: snail-sex-identifier-booth
+    runtime: node
+    rootDir: .
+    buildCommand: npm run build:real
+    startCommand: NODE_ENV=production npx tsx src/server.ts
+    healthCheckPath: /health
+    plan: free
+    envVars:
+      - key: VITE_YOLO_API_URL
+        value: https://snail-api-booth.onrender.com

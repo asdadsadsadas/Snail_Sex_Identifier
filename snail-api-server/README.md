@@ -105,6 +105,12 @@ crop identifies the snail, the full frame confirms it's the same container/scene
 similar-looking snails from getting confused. The pinned result is returned — no Gemini, no
 variance. `GET /health` reports `demoPins` so you can confirm it's active.
 
+**Deploying pins to Render:** `demo_pins.json` is **self-contained** — `build_demo_pins.py`
+bakes each reference photo's difference hashes into it, so only the JSON needs to be on the
+server (the photos stay on your machine). Commit `demo_pins.json` and push; the
+`snail-api-booth` service (see `render.yaml`) loads the pins at startup. Until then it serves
+real detections (detector + Gemini fallback).
+
 ## Verify class IDs after training
 
 YOLO orders classes alphabetically by folder name. After training the classifiers, check:
