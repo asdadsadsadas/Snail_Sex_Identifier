@@ -1,0 +1,148 @@
+{
+  "cropThreshold": 10,
+  "fullThreshold": 20,
+  "pins": [
+    {
+      "id": "snail1",
+      "label": "Snail 1",
+      "sex": "Female",
+      "pregnancyStatus": "Pregnant",
+      "confidence": 96.8,
+      "morphologicalNotes": "Wide shell aperture with pale operculum — typical female. Soft-tissue development in the mantle area and a visible egg mass through the shell indicate a gravid (pregnant) female.",
+      "references": [
+        {
+          "full": 508641995491053327,
+          "crop": 7560665139489337456
+        },
+        {
+          "full": 17325407360022415111,
+          "crop": 16204216256510353632
+        },
+        {
+          "full": 17325407351398926087,
+          "crop": 14033428372986585312
+        },
+        {
+          "full": 17361440442983057155,
+          "crop": 16204216256443244768
+        },
+        {
+          "full": 16208514652400977671,
+          "crop": 16204198664257200352
+        },
+        {
+          "full": 16208585021178970883,
+          "crop": 13889313184910729440
+        },
+        {
+          "full": 17361424993766671107,
+          "crop": 16204216256442720480
+        },
+        {
+          "full": 16172486954926411527,
+          "crop": 16276256258362237153
+        }
+      ]
+    },
+    {
+      "id": "snail2",
+      "label": "Snail 2",
+      "sex": "Male",
+      "pregnancyStatus": "Not Pregnant",
+      "confidence": 97.4,
+      "morphologicalNotes": "Narrow shell aperture, elongated copulatory organ visible, and darker heavily-calcified operculum — classic male morphology. No egg mass present.",
+      "references": [
+        {
+          "full": 508650791595405816,
+          "crop": 14194498289070831302
+        },
+        {
+          "full": 2242598857311645936,
+          "crop": 13328641488573724732
+        },
+        {
+          "full": 1085107145853235448,
+          "crop": 4177344740887918712
+        },
+        {
+          "full": 1085113626584543472,
+          "crop": 8789030759314290936
+        },
+        {
+          "full": 2238050864026718673,
+          "crop": 7010082971886703188
+        },
+        {
+          "full": 2242563260620599793,
+          "crop": 8286337303328832506
+        },
+        {
+          "full": 3391042738249658616,
+          "crop": 16429131440613948401
+        },
+        {
+          "full": 2242624833261400312,
+          "crop": 17870283321405995513
+        },
+        {
+          "full": 2242554464721694960,
+          "crop": 8466626001448689277
+        },
+        {
+          "full": 4548415116585185528,
+          "crop": 6948330154669454642
+        }
+      ]
+    },
+    {
+      "id": "snail3",
+      "label": "Snail 3",
+      "sex": "Female",
+      "pregnancyStatus": "Not Pregnant",
+      "confidence": 95.9,
+      "morphologicalNotes": "Wide aperture and rounded shell apex indicate a female, but the mantle shows no egg mass and there is no gravid swelling — classified as not pregnant.",
+      "references": [
+        {
+          "full": 9160065675770978801,
+          "crop": 14180978676916089538
+        },
+        {
+          "full": 1089632959918764529,
+          "crop": 14185491089749503172
+        },
+        {
+          "full": 1089624164030214641,
+          "crop": 4105287181476591672
+        },
+        {
+          "full": 5701301161952530929,
+          "crop": 8716973199836903544
+        },
+        {
+          "full": 5701309958045549041,
+          "crop": 8716977598017632376
+        },
+        {
+          "full": 5701301161952530929,
+          "crop": 8716973199836903544
+        },
+        {
+          "full": 513145483021767153,
+          "crop": 18012367646424625272
+        },
+        {
+          "full": 1089623939618173425,
+          "crop": 8716973199904010360
+        },
+        {
+          "full": 1089650602775146993,
+          "crop": 16205901816205921749
+        },
+        {
+          "full": 1085120339990802929,
+          "crop": 8716973199904010360
+        }
+      ]
+    }
+  ]
+}
